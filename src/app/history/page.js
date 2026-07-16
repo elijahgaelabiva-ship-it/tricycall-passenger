@@ -52,6 +52,13 @@ export default function HistoryPage() {
 
   return (
     <div className="min-h-screen bg-white px-4 py-8">
+      <button
+        onClick={() => router.push('/book')}
+        className="text-green-600 text-sm font-medium mb-4"
+      >
+        ← Back to Booking
+      </button>
+
       <h1 className="text-2xl font-bold text-green-600 text-center mb-6">
         Trip History
       </h1>
