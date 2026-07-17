@@ -39,14 +39,9 @@ export default function TripPage() {
   const [submitted, setSubmitted] = useState(false)
   const [existingRating, setExistingRating] = useState(null)
 
-  useEffect(() => {
+useEffect(() => {
     const loadTrip = async () => {
-      const { data } = await supabase
-        .from('trips')
-        .select('*')
-        .eq('id', id)
-        .single()
-
+      const { data } = await supabase.from('trips').select('*').eq('id', id).single()
       setTrip(data)
 
       const { data: ratingData } = await supabase
@@ -57,25 +52,23 @@ export default function TripPage() {
 
       if (ratingData) setExistingRating(ratingData)
     }
-
     loadTrip()
 
     const tripChannel = supabase
       .channel(`trip-${id}`)
       .on(
         'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'trips',
-          filter: `id=eq.${id}`,
-        },
+        { event: 'UPDATE', schema: 'public', table: 'trips', filter: `id=eq.${id}` },
         (payload) => setTrip(payload.new)
       )
       .subscribe()
 
+    // Backup polling every 4 seconds in case realtime is delayed/missed
+    const pollInterval = setInterval(loadTrip, 4000)
+
     return () => {
       supabase.removeChannel(tripChannel)
+      clearInterval(pollInterval)
     }
   }, [id])
 
@@ -176,9 +169,15 @@ export default function TripPage() {
     driverLocation &&
     !['completed', 'cancelled'].includes(trip.status)
 
-  return (
+return (
     <div className="min-h-screen bg-white flex flex-col">
-      <div className="p-4 text-center">
+      <div className="p-4 text-center relative">
+        <button
+          onClick={() => router.push('/book')}
+          className="absolute top-4 left-4 text-sm text-gray-500 underline"
+        >
+          Home
+        </button>
         <h1 className="text-2xl font-bold text-green-600">
           {trip ? statusMessages[trip.status] : 'Loading...'}
         </h1>
