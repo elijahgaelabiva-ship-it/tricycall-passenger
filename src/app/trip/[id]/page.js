@@ -16,13 +16,24 @@ export default function TripPage() {
   const [showNoDriversHint, setShowNoDriversHint] = useState(false)
 
   useEffect(() => {
-    if (trip?.status !== 'requested') {
+    if (!trip || trip.status !== 'requested') {
       setShowNoDriversHint(false)
       return
     }
-    const timer = setTimeout(() => setShowNoDriversHint(true), 20000) // 20 seconds
+
+    const requestedTime = new Date(trip.requested_at).getTime()
+    const now = Date.now()
+    const elapsed = now - requestedTime
+    const remaining = 20000 - elapsed
+
+    if (remaining <= 0) {
+      setShowNoDriversHint(true)
+      return
+    }
+
+    const timer = setTimeout(() => setShowNoDriversHint(true), remaining)
     return () => clearTimeout(timer)
-  }, [trip?.status])
+  }, [trip?.status, trip?.requested_at])
   const [rating, setRating] = useState(0)
   const [comment, setComment] = useState('')
   const [submitted, setSubmitted] = useState(false)
