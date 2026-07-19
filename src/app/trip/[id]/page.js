@@ -14,6 +14,8 @@ export default function TripPage() {
   const [trip, setTrip] = useState(null)
   const [driverLocation, setDriverLocation] = useState(null)
   const [showNoDriversHint, setShowNoDriversHint] = useState(false)
+  const [driverContact, setDriverContact] = useState(null)
+  const [driverContactError, setDriverContactError] = useState('')
 
   useEffect(() => {
     if (!trip || trip.status !== 'requested') {
@@ -71,6 +73,27 @@ useEffect(() => {
       clearInterval(pollInterval)
     }
   }, [id])
+
+  useEffect(() => {
+    if (!trip?.driver_id) return
+
+    const loadDriverContact = async () => {
+      const { data, error } = await supabase.rpc('get_trip_driver_contact', {
+        target_trip_id: id,
+      })
+
+      if (error) {
+        setDriverContactError(error.message)
+        return
+      }
+
+      if (data && data.length > 0) {
+        setDriverContact(data[0])
+      }
+    }
+
+    loadDriverContact()
+  }, [trip?.driver_id, id])
 
   useEffect(() => {
     if (!trip?.driver_id) return
@@ -200,6 +223,33 @@ return (
           </p>
         )}
       </div>
+
+      {driverContact && !['requested', 'completed', 'cancelled'].includes(trip?.status) && (
+        <div className="mx-4 mb-2 p-4 bg-green-50 rounded-xl flex items-center justify-between">
+          <div>
+            <p className="text-xs text-gray-500">Your Driver</p>
+            <p className="font-semibold text-gray-800">{driverContact.full_name}</p>
+            <p className="text-sm text-gray-600">{driverContact.phone}</p>
+            <p className="text-sm text-yellow-500 mt-1">
+              {driverContact.rating_count > 0
+                ? `★ ${Number(driverContact.avg_rating).toFixed(1)} (${driverContact.rating_count} ratings)`
+                : 'New driver — no ratings yet'}
+            </p>
+          </div>
+          
+            href={`tel:${driverContact.phone}`}
+            className="bg-green-600 text-white rounded-full px-4 py-2 text-sm font-semibold"
+          >
+            Call
+          </a>
+        </div>
+      )}
+
+      {driverContactError && !driverContact && !['requested', 'completed', 'cancelled'].includes(trip?.status) && (
+        <p className="text-center text-xs text-red-500 px-4 mb-2">
+          Could not load driver contact: {driverContactError}
+        </p>
+      )}
 
       {showMap && (
         <div
