@@ -146,22 +146,28 @@ useEffect(() => {
     }
   }
 
+  const ACTIVE_STATUSES = ['requested', 'accepted', 'arrived', 'ongoing']
+
   const cancelTrip = async () => {
+    if (['accepted', 'arrived', 'ongoing'].includes(trip.status)) {
+      const confirmed = window.confirm(
+        'A driver has already accepted this trip. Are you sure you want to cancel? (e.g. if the driver seems unreachable)'
+      )
+      if (!confirmed) return
+    }
+
     const { error } = await supabase
       .from('trips')
       .update({ status: 'cancelled' })
       .eq('id', id)
-      .eq('status', 'requested')
+      .in('status', ACTIVE_STATUSES)
 
     if (error) {
       alert('Could not cancel: ' + error.message)
       return
     }
 
-    setTrip((prev) => ({
-      ...prev,
-      status: 'cancelled',
-    }))
+    router.push('/book')
   }
 
   const showMap =
@@ -267,12 +273,12 @@ return (
             </p>
           )}
 
-          {trip?.status === 'requested' && (
+          {trip && ['requested', 'accepted', 'arrived', 'ongoing'].includes(trip.status) && (
             <button
               onClick={cancelTrip}
               className="w-full bg-red-500 text-white rounded-xl py-3 font-semibold hover:bg-red-600 transition"
             >
-              Cancel Ride Request
+              {trip.status === 'requested' ? 'Cancel Ride Request' : 'Cancel Trip'}
             </button>
           )}
 
