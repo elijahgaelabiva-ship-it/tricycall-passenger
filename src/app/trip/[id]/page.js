@@ -143,7 +143,7 @@ useEffect(() => {
   }, [trip?.driver_id, trip?.status])
 
   const statusMessages = {
-    requested: 'no drivers available...',
+    requested: 'Looking for a nearby driver...',
     accepted: 'A driver is on the way!',
     arrived: 'Your driver has arrived!',
     ongoing: 'Trip in progress',
