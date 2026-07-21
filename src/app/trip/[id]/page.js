@@ -253,6 +253,7 @@ return (
 
       {showMap && (
         <div
+          className="rounded-2xl overflow-hidden"
           style={{
             height: '350px',
             width: '100%',
@@ -269,6 +270,11 @@ return (
               lng: trip.dropoff_lng,
             }}
             driverLocation={driverLocation}
+            routeTarget={
+              trip.status === 'ongoing'
+                ? { lat: trip.dropoff_lat, lng: trip.dropoff_lng }
+                : { lat: trip.pickup_lat, lng: trip.pickup_lng }
+            }
           />
         </div>
       )}
