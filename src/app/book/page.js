@@ -238,7 +238,7 @@ export default function BookPage() {
         )}
       </div>
 
-      <div className="flex-1" style={{ position: 'relative' }}>
+      <div className="flex-1 rounded-2xl overflow-hidden" style={{ position: 'relative' }}>
         {currentLocation ? (
           <MapView
             currentLocation={currentLocation}

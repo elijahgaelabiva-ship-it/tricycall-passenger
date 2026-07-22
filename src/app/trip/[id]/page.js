@@ -225,8 +225,19 @@ return (
       </div>
 
       {driverContact && !['requested', 'completed', 'cancelled'].includes(trip?.status) && (
-        <div className="mx-4 mb-2 p-4 bg-green-50 rounded-xl flex items-center justify-between">
-          <div>
+        <div className="mx-4 mb-2 p-4 bg-green-50 rounded-xl flex items-center gap-3">
+          {driverContact.avatar_url ? (
+            <img
+              src={driverContact.avatar_url}
+              alt={driverContact.full_name}
+              className="w-14 h-14 rounded-full object-cover flex-shrink-0"
+            />
+          ) : (
+            <div className="w-14 h-14 rounded-full bg-green-200 flex items-center justify-center text-green-700 font-bold text-lg flex-shrink-0">
+              {driverContact.full_name?.charAt(0).toUpperCase() || '?'}
+            </div>
+          )}
+          <div className="flex-1">
             <p className="text-xs text-gray-500">Your Driver</p>
             <p className="font-semibold text-gray-800">{driverContact.full_name}</p>
             <p className="text-sm text-gray-600">{driverContact.phone}</p>
@@ -236,9 +247,9 @@ return (
                 : 'New driver — no ratings yet'}
             </p>
           </div>
-          <a
+          
             href={`tel:${driverContact.phone}`}
-            className="bg-green-600 text-white rounded-full px-4 py-2 text-sm font-semibold"
+            className="bg-green-600 text-white rounded-full px-4 py-2 text-sm font-semibold flex-shrink-0"
           >
             Call
           </a>
