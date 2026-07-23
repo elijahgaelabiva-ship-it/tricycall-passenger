@@ -197,7 +197,14 @@ function RouteLayer({ start, end }) {
   return null
 }
 
-export default function MapView({ currentLocation, destination, driverLocation, routeTarget, onMapClick }) {
+export default function MapView({
+  currentLocation,
+  destination,
+  driverLocation,
+  routeTarget,
+  onMapClick,
+  availableDrivers,
+}) {
   return (
     <MapContainer
       center={[currentLocation.lat, currentLocation.lng]}
@@ -209,6 +216,11 @@ export default function MapView({ currentLocation, destination, driverLocation, 
         attribution='&copy; OpenStreetMap contributors &copy; CARTO'
       />
       {driverLocation && <DriverMarker location={driverLocation} />}
+      {!driverLocation &&
+        availableDrivers &&
+        availableDrivers.map((d) => (
+          <DriverMarker key={d.id} location={{ lat: d.current_lat, lng: d.current_lng }} />
+        ))}
       <Marker position={[currentLocation.lat, currentLocation.lng]} icon={currentIcon} />
       {destination && (
         <Marker position={[destination.lat, destination.lng]} icon={destinationIcon} />

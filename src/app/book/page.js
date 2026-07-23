@@ -36,6 +36,7 @@ export default function BookPage() {
   const [requestError, setRequestError] = useState('')
   const [checkingStatus, setCheckingStatus] = useState(true)
   const [blockedMessage, setBlockedMessage] = useState('')
+  const [availableDrivers, setAvailableDrivers] = useState([])
   const router = useRouter()
 
   // Before letting the passenger book, make sure they don't already have
@@ -100,6 +101,26 @@ export default function BookPage() {
         setLocationError('Could not detect your location. Please allow location access.')
       }
     )
+  }, [])
+
+  // Show all currently online, available tricycles on the map while the
+  // passenger is choosing where to go. Refreshes every 5 seconds so drivers
+  // moving around update live, same pattern as the driver app's ride requests.
+  useEffect(() => {
+    const loadAvailableDrivers = async () => {
+      const { data } = await supabase
+        .from('drivers')
+        .select('id, current_lat, current_lng')
+        .eq('is_online', true)
+        .not('current_lat', 'is', null)
+        .not('current_lng', 'is', null)
+
+      setAvailableDrivers(data || [])
+    }
+
+    loadAvailableDrivers()
+    const interval = setInterval(loadAvailableDrivers, 5000)
+    return () => clearInterval(interval)
   }, [])
 
   useEffect(() => {
@@ -244,6 +265,7 @@ export default function BookPage() {
             currentLocation={currentLocation}
             destination={destination}
             onMapClick={handleMapClick}
+            availableDrivers={availableDrivers}
           />
         ) : (
           <div className="flex items-center justify-center h-full">
