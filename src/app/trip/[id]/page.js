@@ -241,13 +241,16 @@ return (
             <p className="text-xs text-gray-500">Your Driver</p>
             <p className="font-semibold text-gray-800">{driverContact.full_name}</p>
             <p className="text-sm text-gray-600">{driverContact.phone}</p>
+            {driverContact.plate_number && (
+              <p className="text-sm text-gray-500">Plate: {driverContact.plate_number}</p>
+            )}
             <p className="text-sm text-yellow-500 mt-1">
               {driverContact.rating_count > 0
                 ? `★ ${Number(driverContact.avg_rating).toFixed(1)} (${driverContact.rating_count} ratings)`
                 : 'New driver — no ratings yet'}
             </p>
           </div>
-          <a
+          
             href={`tel:${driverContact.phone}`}
             className="bg-green-600 text-white rounded-full px-4 py-2 text-sm font-semibold flex-shrink-0"
           >
