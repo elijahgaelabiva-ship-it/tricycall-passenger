@@ -54,6 +54,7 @@ function RouteLayer({ start, end }) {
   const routeLayerRef = useRef(null)
   const lastStartRef = useRef(null)
   const lastEndRef = useRef(null)
+  const hasFitBoundsRef = useRef(false)
 
   const clearCurrentRoute = () => {
     if (routeLayerRef.current) {
@@ -91,6 +92,11 @@ function RouteLayer({ start, end }) {
       const latLngs = coords.map(([lng, lat]) => [lat, lng])
       const layer = L.polyline(latLngs, { color: '#2563eb', weight: 5, opacity: 0.85 }).addTo(map)
       routeLayerRef.current = layer
+
+      if (!hasFitBoundsRef.current) {
+        map.fitBounds(layer.getBounds(), { padding: [40, 40] })
+        hasFitBoundsRef.current = true
+      }
     } catch (err) {
       console.log('Route request failed, showing straight-line fallback:', err.message)
       drawFallbackStraightLine(start, end)
@@ -135,12 +141,12 @@ export default function MapView({ currentLocation, destination, driverLocation, 
         url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
         attribution='&copy; OpenStreetMap contributors &copy; CARTO'
       />
+      {driverLocation && (
+        <Marker position={[driverLocation.lat, driverLocation.lng]} icon={driverIcon} />
+      )}
       <Marker position={[currentLocation.lat, currentLocation.lng]} icon={currentIcon} />
       {destination && (
         <Marker position={[destination.lat, destination.lng]} icon={destinationIcon} />
-      )}
-      {driverLocation && (
-        <Marker position={[driverLocation.lat, driverLocation.lng]} icon={driverIcon} />
       )}
       {driverLocation && routeTarget && (
         <RouteLayer start={driverLocation} end={routeTarget} />
