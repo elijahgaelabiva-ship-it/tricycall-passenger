@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-leaflet'
 import L from 'leaflet'
 
@@ -16,13 +16,6 @@ const destinationIcon = new L.Icon({
   iconAnchor: [12, 41],
 })
 
-const driverIcon = new L.Icon({
-  iconUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png',
-  iconSize: [30, 49],
-  iconAnchor: [15, 49],
-  className: 'hue-rotate-180',
-})
-
 function ClickHandler({ onMapClick }) {
   useMapEvents({
     click(e) {
@@ -32,7 +25,6 @@ function ClickHandler({ onMapClick }) {
   return null
 }
 
-// Distance in meters between two lat/lng points (haversine formula)
 function distanceMeters(a, b) {
   const R = 6371000
   const dLat = ((b.lat - a.lat) * Math.PI) / 180
@@ -46,9 +38,84 @@ function distanceMeters(a, b) {
   return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s))
 }
 
-// Draws/updates the blue road-based route showing the driver's route to
-// wherever they're currently headed, without stacking duplicate layers or
-// re-requesting on every tiny GPS jitter.
+function bearingDegrees(a, b) {
+  const toRad = (d) => (d * Math.PI) / 180
+  const toDeg = (r) => (r * 180) / Math.PI
+
+  const dLng = toRad(b.lng - a.lng)
+  const y = Math.sin(dLng) * Math.cos(toRad(b.lat))
+  const x =
+    Math.cos(toRad(a.lat)) * Math.sin(toRad(b.lat)) -
+    Math.sin(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.cos(dLng)
+
+  const deg = toDeg(Math.atan2(y, x))
+  return (deg + 360) % 360
+}
+
+function createDriverIcon(bearing) {
+  const html = `
+    <div style="
+      width: 48px;
+      height: 48px;
+      position: relative;
+      transform: rotate(${bearing}deg);
+      transition: transform 0.3s linear;
+    ">
+      <div style="
+        position: absolute;
+        top: -10px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 0;
+        height: 0;
+        border-left: 6px solid transparent;
+        border-right: 6px solid transparent;
+        border-bottom: 12px solid #0a7d34;
+        z-index: 2;
+      "></div>
+      <img
+        src="/icons/driver-marker-64.png"
+        style="
+          width: 48px;
+          height: 48px;
+          display: block;
+          transform: rotate(${-bearing}deg);
+        "
+      />
+    </div>
+  `
+
+  return L.divIcon({
+    html,
+    className: '',
+    iconSize: [48, 48],
+    iconAnchor: [24, 24],
+  })
+}
+
+function DriverMarker({ location }) {
+  const [bearing, setBearing] = useState(0)
+  const prevLocationRef = useRef(null)
+
+  useEffect(() => {
+    if (!location) return
+
+    const prev = prevLocationRef.current
+    if (prev && distanceMeters(prev, location) > 3) {
+      setBearing(bearingDegrees(prev, location))
+    }
+
+    prevLocationRef.current = location
+  }, [location?.lat, location?.lng])
+
+  return (
+    <Marker
+      position={[location.lat, location.lng]}
+      icon={createDriverIcon(bearing)}
+    />
+  )
+}
+
 function RouteLayer({ start, end }) {
   const map = useMap()
   const routeLayerRef = useRef(null)
@@ -141,9 +208,7 @@ export default function MapView({ currentLocation, destination, driverLocation, 
         url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
         attribution='&copy; OpenStreetMap contributors &copy; CARTO'
       />
-      {driverLocation && (
-        <Marker position={[driverLocation.lat, driverLocation.lng]} icon={driverIcon} />
-      )}
+      {driverLocation && <DriverMarker location={driverLocation} />}
       <Marker position={[currentLocation.lat, currentLocation.lng]} icon={currentIcon} />
       {destination && (
         <Marker position={[destination.lat, destination.lng]} icon={destinationIcon} />
