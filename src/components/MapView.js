@@ -341,6 +341,7 @@ export default function MapView({
   onMapClick,
   onDestinationSelect,
   availableDrivers,
+  showCurrentMarker = true,
 }) {
   // currentLocation is often still null/undefined for a moment while the
   // browser is requesting GPS/location permission. Rendering the map before
@@ -383,7 +384,9 @@ export default function MapView({
           availableDrivers.map((d) => (
             <DriverMarker key={d.id} location={{ lat: d.current_lat, lng: d.current_lng }} />
           ))}
-        <Marker position={[currentLocation.lat, currentLocation.lng]} icon={currentIcon} />
+        {showCurrentMarker && (
+          <Marker position={[currentLocation.lat, currentLocation.lng]} icon={currentIcon} />
+        )}
         {destination && (
           <>
             <Marker position={[destination.lat, destination.lng]} icon={destinationIcon} />

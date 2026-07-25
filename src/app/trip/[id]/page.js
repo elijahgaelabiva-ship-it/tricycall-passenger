@@ -304,6 +304,7 @@ return (
             }}
             driverLocation={driverLocation}
             availableDrivers={availableDrivers}
+            showCurrentMarker={trip.status !== 'ongoing'}
             routeTarget={
               trip.status === 'ongoing'
                 ? { lat: trip.dropoff_lat, lng: trip.dropoff_lng }
