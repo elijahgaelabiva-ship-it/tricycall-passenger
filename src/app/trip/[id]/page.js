@@ -244,7 +244,7 @@ return (
         )}
         {trip?.status === 'requested' && showNoDriversHint && (
           <p className="text-sm text-orange-500 mt-2">
-            No drivers nearby yet. You can keep waiting or cancel and try again later.
+            No drivers available yet. You can keep waiting or cancel and try again later.
           </p>
         )}
       </div>
