@@ -226,12 +226,6 @@ useEffect(() => {
 return (
     <div className="min-h-screen bg-white flex flex-col">
       <div className="p-4 text-center relative">
-        <button
-          onClick={() => router.push('/book')}
-          className="absolute top-4 left-4 text-sm text-gray-500 underline"
-        >
-          Home
-        </button>
         <h1 className="text-2xl font-bold text-green-600">
           {trip ? statusMessages[trip.status] : 'Loading...'}
         </h1>
