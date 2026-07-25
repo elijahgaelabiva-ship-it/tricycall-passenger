@@ -28,6 +28,7 @@ const STRIKE_LIMIT = 3
 export default function BookPage() {
   const [currentLocation, setCurrentLocation] = useState(null)
   const [destination, setDestination] = useState(null)
+  const [destinationAddress, setDestinationAddress] = useState('')
   const [locationError, setLocationError] = useState('')
   const [fareSettings, setFareSettings] = useState(null)
   const [distanceKm, setDistanceKm] = useState(null)
@@ -153,6 +154,13 @@ export default function BookPage() {
 
   const handleMapClick = (latlng) => {
     setDestination(latlng)
+    setDestinationAddress('')
+  }
+
+  // Called when the passenger picks an address from the "Where to?" search box.
+  const handleDestinationSelect = (location, address) => {
+    setDestination(location)
+    setDestinationAddress(address)
   }
 
   const handleRequestRide = async () => {
@@ -265,6 +273,7 @@ export default function BookPage() {
             currentLocation={currentLocation}
             destination={destination}
             onMapClick={handleMapClick}
+            onDestinationSelect={handleDestinationSelect}
             availableDrivers={availableDrivers}
           />
         ) : (
@@ -281,6 +290,9 @@ export default function BookPage() {
 
         {destination && distanceKm !== null && (
           <div className="text-sm text-gray-700 space-y-1">
+            {destinationAddress && (
+              <p className="text-gray-800 font-medium truncate">{destinationAddress}</p>
+            )}
             <p>Distance: {distanceKm.toFixed(2)} km</p>
             <p className="font-semibold text-green-700">
               Estimated Fare: ₱{estimatedFare.toFixed(2)}
