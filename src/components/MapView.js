@@ -276,6 +276,8 @@ function DestinationSearchBox({ onSelect, biasCenter }) {
           padding: '14px 18px',
           borderRadius: 999,
           border: 'none',
+          backgroundColor: '#e0e0e0',
+          color: '#1a1a1a',
           boxShadow: '0 2px 10px rgba(0,0,0,0.2)',
           fontSize: 16,
           textAlign: 'center',
@@ -388,9 +390,18 @@ export default function MapView({
             <FlyToLocation location={destination} />
           </>
         )}
-        {driverLocation && routeTarget && (
-          <RouteLayer start={driverLocation} end={routeTarget} />
-        )}
+        {(() => {
+          // On the booking screen there's no driver assigned yet, so fall
+          // back to drawing the route from the passenger's own location to
+          // the destination as soon as it's confirmed (typed or tapped).
+          // Once a driver is assigned, driverLocation/routeTarget (passed by
+          // the trip-tracking screen) take priority instead.
+          const routeStart = driverLocation || currentLocation
+          const routeEnd = routeTarget || destination
+          return routeStart && routeEnd ? (
+            <RouteLayer start={routeStart} end={routeEnd} />
+          ) : null
+        })()}
         <ClickHandler onMapClick={onMapClick} />
       </MapContainer>
     </div>
