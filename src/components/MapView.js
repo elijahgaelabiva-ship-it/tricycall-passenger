@@ -1,29 +1,14 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet'
 import L from 'leaflet'
 
-const currentIcon = new L.Icon({
-  iconUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-})
-
-const destinationIcon = new L.Icon({
+const targetIcon = new L.Icon({
   iconUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon-2x.png',
   iconSize: [25, 41],
   iconAnchor: [12, 41],
 })
-
-function ClickHandler({ onMapClick }) {
-  useMapEvents({
-    click(e) {
-      if (onMapClick) onMapClick(e.latlng)
-    },
-  })
-  return null
-}
 
 function distanceMeters(a, b) {
   const R = 6371000
@@ -166,6 +151,10 @@ function RouteLayer({ start, end }) {
 
     if (!startMoved && !endChanged) return
 
+    if (endChanged) {
+      hasFitBoundsRef.current = false
+    }
+
     lastStartRef.current = start
     lastEndRef.current = end
 
@@ -181,17 +170,10 @@ function RouteLayer({ start, end }) {
   return null
 }
 
-export default function MapView({
-  currentLocation,
-  destination,
-  driverLocation,
-  routeTarget,
-  onMapClick,
-  availableDrivers,
-}) {
+export default function MapView({ driverLocation, targetLocation }) {
   return (
     <MapContainer
-      center={[currentLocation.lat, currentLocation.lng]}
+      center={[driverLocation.lat, driverLocation.lng]}
       zoom={15}
       style={{ height: '100%', width: '100%' }}
     >
@@ -199,20 +181,13 @@ export default function MapView({
         url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
         attribution='&copy; OpenStreetMap contributors &copy; CARTO'
       />
-      {driverLocation && <DriverMarker location={driverLocation} />}
-      {!driverLocation &&
-        availableDrivers &&
-        availableDrivers.map((d) => (
-          <DriverMarker key={d.id} location={{ lat: d.current_lat, lng: d.current_lng }} />
-        ))}
-      <Marker position={[currentLocation.lat, currentLocation.lng]} icon={currentIcon} />
-      {destination && (
-        <Marker position={[destination.lat, destination.lng]} icon={destinationIcon} />
+      <DriverMarker location={driverLocation} />
+      {targetLocation && (
+        <>
+          <Marker position={[targetLocation.lat, targetLocation.lng]} icon={targetIcon} />
+          <RouteLayer start={driverLocation} end={targetLocation} />
+        </>
       )}
-      {driverLocation && routeTarget && (
-        <RouteLayer start={driverLocation} end={routeTarget} />
-      )}
-      <ClickHandler onMapClick={onMapClick} />
     </MapContainer>
   )
 }
