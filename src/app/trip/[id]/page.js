@@ -369,6 +369,15 @@ return (
             </p>
           )}
 
+          {trip?.status === 'completed' && (
+            <button
+              onClick={() => router.push('/book')}
+              className="w-full bg-green-600 text-white rounded-xl py-3 font-semibold hover:bg-green-700 transition"
+            >
+              Back to Home
+            </button>
+          )}
+
           {trip && ['requested', 'accepted', 'arrived', 'ongoing'].includes(trip.status) && (
             <button
               onClick={cancelTrip}
