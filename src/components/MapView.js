@@ -5,9 +5,9 @@ import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-lea
 import L from 'leaflet'
 
 const currentIcon = new L.Icon({
-  iconUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
+  iconUrl: '/icons/destination-marker.png',
+  iconSize: [42, 48],
+  iconAnchor: [21, 48],
 })
 
 const destinationIcon = new L.Icon({
@@ -128,16 +128,8 @@ function RouteLayer({ start, end }) {
 
   const drawRoute = async (start, end) => {
     try {
-      // Routed through our own /api/route proxy so the request to OSRM
-      // carries a proper identifying User-Agent (browsers won't let us
-      // set that header directly on a client-side fetch).
-      const params = new URLSearchParams({
-        startLat: start.lat,
-        startLng: start.lng,
-        endLat: end.lat,
-        endLng: end.lng,
-      })
-      const res = await fetch(`/api/route?${params.toString()}`)
+      const url = `https://router.project-osrm.org/route/v1/driving/${start.lng},${start.lat};${end.lng},${end.lat}?overview=full&geometries=geojson`
+      const res = await fetch(url)
 
       if (!res.ok) throw new Error('Routing request failed')
 
@@ -206,10 +198,9 @@ function FlyToLocation({ location }) {
   return null
 }
 
-// "Where to?" search box overlaid on the map. Debounces requests to our
-// /api/geocode proxy (which forwards to Nominatim, OSM's free geocoder,
-// with a proper identifying User-Agent) as the passenger types, shows
-// matching addresses, and reports the chosen lat/lng back to the parent.
+// "Where to?" search box overlaid on the map. Debounces requests to
+// Nominatim (OSM's free geocoder) as the passenger types, shows matching
+// addresses, and reports the chosen lat/lng back to the parent.
 function DestinationSearchBox({ onSelect, biasCenter }) {
   const [query, setQuery] = useState('')
   const [suggestions, setSuggestions] = useState([])
@@ -228,8 +219,10 @@ function DestinationSearchBox({ onSelect, biasCenter }) {
       setLoading(true)
       try {
         const params = new URLSearchParams({
+          format: 'json',
           q: query,
           limit: '5',
+          addressdetails: '1',
         })
 
         // Nudge results toward the passenger's current area without
@@ -248,9 +241,11 @@ function DestinationSearchBox({ onSelect, biasCenter }) {
           params.set('bounded', '0')
         }
 
-        const res = await fetch(`/api/geocode?${params.toString()}`)
+        const res = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
+          headers: { 'Accept-Language': 'en' },
+        })
         const data = await res.json()
-        setSuggestions(Array.isArray(data) ? data : [])
+        setSuggestions(data || [])
       } catch (err) {
         console.log('Geocoding search failed:', err.message)
         setSuggestions([])
