@@ -38,6 +38,8 @@ export default function BookPage() {
   const [checkingStatus, setCheckingStatus] = useState(true)
   const [blockedMessage, setBlockedMessage] = useState('')
   const [availableDrivers, setAvailableDrivers] = useState([])
+  const [passengerProfile, setPassengerProfile] = useState(null)
+  const [menuOpen, setMenuOpen] = useState(false)
   const router = useRouter()
 
   // Before letting the passenger book, make sure they don't already have
@@ -69,9 +71,11 @@ export default function BookPage() {
 
       const { data: profile } = await supabase
         .from('profiles')
-        .select('strike_count')
+        .select('*')
         .eq('id', user.id)
         .single()
+
+      if (profile) setPassengerProfile(profile)
 
       if (profile && profile.strike_count >= STRIKE_LIMIT) {
         setBlockedMessage(
@@ -250,6 +254,23 @@ export default function BookPage() {
   return (
     <div className="h-screen bg-white flex flex-col overflow-hidden">
       <div className="p-4 bg-white shadow-sm z-10 relative">
+        <button
+          onClick={() => setMenuOpen(true)}
+          className="absolute top-4 left-4 p-1 text-gray-700"
+          aria-label="Open menu"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className="h-6 w-6"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        </button>
+
         <h1 className="text-xl font-bold text-green-600 text-center">
           Where are you going?
         </h1>
@@ -266,6 +287,57 @@ export default function BookPage() {
           <p className="text-red-600 text-sm text-center mt-2">{locationError}</p>
         )}
       </div>
+
+      {menuOpen && (
+        <div className="fixed inset-0 z-50 flex">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={() => setMenuOpen(false)}
+          />
+
+          {/* Slide-in panel */}
+          <div className="relative w-72 max-w-[80%] h-full bg-white shadow-xl p-6 flex flex-col">
+            <button
+              onClick={() => setMenuOpen(false)}
+              className="self-end text-gray-400 text-2xl leading-none mb-4"
+              aria-label="Close menu"
+            >
+              &times;
+            </button>
+
+            <div className="flex flex-col items-center text-center">
+              {passengerProfile?.avatar_url ? (
+                <img
+                  src={passengerProfile.avatar_url}
+                  alt={passengerProfile.full_name}
+                  className="w-20 h-20 rounded-full object-cover"
+                />
+              ) : (
+                <div className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center text-green-700 font-bold text-2xl">
+                  {passengerProfile?.full_name?.charAt(0).toUpperCase() || '?'}
+                </div>
+              )}
+
+              <p className="font-semibold text-gray-800 mt-3">
+                {passengerProfile?.full_name}
+              </p>
+              <p className="text-sm text-gray-500">{passengerProfile?.phone}</p>
+              <p className="text-xs text-gray-400 mt-1">TRICYCALL.SF Passenger</p>
+            </div>
+
+            <button
+              onClick={async () => {
+                await supabase.auth.signOut()
+                router.push('/login')
+              }}
+              className="mt-auto w-full bg-gray-100 text-gray-700 rounded-xl py-3 font-semibold hover:bg-gray-200 transition"
+            >
+              Logout
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="flex-1 rounded-2xl overflow-hidden" style={{ position: 'relative' }}>
         {currentLocation ? (
