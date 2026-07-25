@@ -128,8 +128,16 @@ function RouteLayer({ start, end }) {
 
   const drawRoute = async (start, end) => {
     try {
-      const url = `https://router.project-osrm.org/route/v1/driving/${start.lng},${start.lat};${end.lng},${end.lat}?overview=full&geometries=geojson`
-      const res = await fetch(url)
+      // Routed through our own /api/route proxy so the request to OSRM
+      // carries a proper identifying User-Agent (browsers won't let us
+      // set that header directly on a client-side fetch).
+      const params = new URLSearchParams({
+        startLat: start.lat,
+        startLng: start.lng,
+        endLat: end.lat,
+        endLng: end.lng,
+      })
+      const res = await fetch(`/api/route?${params.toString()}`)
 
       if (!res.ok) throw new Error('Routing request failed')
 
@@ -198,9 +206,10 @@ function FlyToLocation({ location }) {
   return null
 }
 
-// "Where to?" search box overlaid on the map. Debounces requests to
-// Nominatim (OSM's free geocoder) as the passenger types, shows matching
-// addresses, and reports the chosen lat/lng back to the parent.
+// "Where to?" search box overlaid on the map. Debounces requests to our
+// /api/geocode proxy (which forwards to Nominatim, OSM's free geocoder,
+// with a proper identifying User-Agent) as the passenger types, shows
+// matching addresses, and reports the chosen lat/lng back to the parent.
 function DestinationSearchBox({ onSelect, biasCenter }) {
   const [query, setQuery] = useState('')
   const [suggestions, setSuggestions] = useState([])
@@ -219,10 +228,8 @@ function DestinationSearchBox({ onSelect, biasCenter }) {
       setLoading(true)
       try {
         const params = new URLSearchParams({
-          format: 'json',
           q: query,
           limit: '5',
-          addressdetails: '1',
         })
 
         // Nudge results toward the passenger's current area without
@@ -241,11 +248,9 @@ function DestinationSearchBox({ onSelect, biasCenter }) {
           params.set('bounded', '0')
         }
 
-        const res = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
-          headers: { 'Accept-Language': 'en' },
-        })
+        const res = await fetch(`/api/geocode?${params.toString()}`)
         const data = await res.json()
-        setSuggestions(data || [])
+        setSuggestions(Array.isArray(data) ? data : [])
       } catch (err) {
         console.log('Geocoding search failed:', err.message)
         setSuggestions([])
