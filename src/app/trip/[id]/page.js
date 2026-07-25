@@ -13,6 +13,7 @@ export default function TripPage() {
 
   const [trip, setTrip] = useState(null)
   const [driverLocation, setDriverLocation] = useState(null)
+  const [availableDrivers, setAvailableDrivers] = useState([])
   const [showNoDriversHint, setShowNoDriversHint] = useState(false)
   const [driverContact, setDriverContact] = useState(null)
   const [driverContactError, setDriverContactError] = useState('')
@@ -142,6 +143,31 @@ useEffect(() => {
     }
   }, [trip?.driver_id, trip?.status])
 
+  // While no driver has accepted yet, show every online tricycle on the
+  // map so the passenger can see activity nearby instead of a blank/text
+  // "looking for driver" screen. Stops once a driver is assigned.
+  useEffect(() => {
+    if (trip?.status !== 'requested') {
+      setAvailableDrivers([])
+      return
+    }
+
+    const loadAvailableDrivers = async () => {
+      const { data } = await supabase
+        .from('drivers')
+        .select('id, current_lat, current_lng')
+        .eq('is_online', true)
+        .not('current_lat', 'is', null)
+        .not('current_lng', 'is', null)
+
+      setAvailableDrivers(data || [])
+    }
+
+    loadAvailableDrivers()
+    const interval = setInterval(loadAvailableDrivers, 5000)
+    return () => clearInterval(interval)
+  }, [trip?.status])
+
   const statusMessages = {
     requested: 'Looking for a nearby driver...',
     accepted: 'A driver is on the way!',
@@ -195,7 +221,6 @@ useEffect(() => {
 
   const showMap =
     trip &&
-    driverLocation &&
     !['completed', 'cancelled'].includes(trip.status)
 
 return (
@@ -284,6 +309,7 @@ return (
               lng: trip.dropoff_lng,
             }}
             driverLocation={driverLocation}
+            availableDrivers={availableDrivers}
             routeTarget={
               trip.status === 'ongoing'
                 ? { lat: trip.dropoff_lat, lng: trip.dropoff_lng }
