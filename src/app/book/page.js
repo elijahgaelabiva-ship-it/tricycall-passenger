@@ -274,22 +274,13 @@ export default function BookPage() {
         <h1 className="text-xl font-bold text-green-600 text-center">
           Where are you going?
         </h1>
-        <button
-          onClick={async () => {
-            await supabase.auth.signOut()
-            router.push('/login')
-          }}
-          className="absolute top-4 right-4 text-sm text-gray-500 underline"
-        >
-          Logout
-        </button>
         {locationError && (
           <p className="text-red-600 text-sm text-center mt-2">{locationError}</p>
         )}
       </div>
 
       {menuOpen && (
-        <div className="fixed inset-0 z-50 flex">
+        <div className="fixed inset-0 flex" style={{ zIndex: 9999 }}>
           {/* Backdrop */}
           <div
             className="absolute inset-0 bg-black/40"
