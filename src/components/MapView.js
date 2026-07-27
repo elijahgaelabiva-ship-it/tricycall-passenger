@@ -5,9 +5,9 @@ import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-lea
 import L from 'leaflet'
 
 const currentIcon = new L.Icon({
-  iconUrl: '/icons/destination-marker.png',
-  iconSize: [42, 48],
-  iconAnchor: [21, 48],
+  iconUrl: '/icons/passenger-marker.png',
+  iconSize: [44, 44],
+  iconAnchor: [0, 18], // the pointing fingertip, not the badge's geometric center
 })
 
 const destinationIcon = new L.Icon({
