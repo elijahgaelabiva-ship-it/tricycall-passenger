@@ -6,8 +6,8 @@ import L from 'leaflet'
 
 const currentIcon = new L.Icon({
   iconUrl: '/icons/passenger-marker.png',
-  iconSize: [44, 44],
-  iconAnchor: [0, 18], // the pointing fingertip, not the badge's geometric center
+  iconSize: [39, 46], // matches the badge's real aspect ratio — do not force-square this
+  iconAnchor: [0, 19], // the pointing fingertip
 })
 
 const destinationIcon = new L.Icon({
