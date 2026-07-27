@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import { supabase } from '@/lib/supabase'
@@ -41,6 +41,23 @@ export default function TripPage() {
   const [comment, setComment] = useState('')
   const [submitted, setSubmitted] = useState(false)
   const [existingRating, setExistingRating] = useState(null)
+  const [driverLocationUpdatedAt, setDriverLocationUpdatedAt] = useState(null)
+  const [isDriverLocationStale, setIsDriverLocationStale] = useState(false)
+  const tripStatusRef = useRef(null)
+
+  // Recheck staleness on a timer (independent of new locations arriving) so
+  // the "Last known location" hint appears even if updates fully stop.
+  useEffect(() => {
+    const STALE_AFTER_MS = 20000
+    const check = () => {
+      setIsDriverLocationStale(
+        Boolean(driverLocationUpdatedAt) && Date.now() - driverLocationUpdatedAt > STALE_AFTER_MS
+      )
+    }
+    check()
+    const interval = setInterval(check, 5000)
+    return () => clearInterval(interval)
+  }, [driverLocationUpdatedAt])
 
 useEffect(() => {
     const loadTrip = async () => {
@@ -76,6 +93,10 @@ useEffect(() => {
   }, [id])
 
   useEffect(() => {
+    tripStatusRef.current = trip?.status
+  }, [trip?.status])
+
+  useEffect(() => {
     if (!trip?.driver_id) return
 
     const loadDriverContact = async () => {
@@ -96,9 +117,20 @@ useEffect(() => {
     loadDriverContact()
   }, [trip?.driver_id, id])
 
+  // Continuous live driver tracking for the whole trip — this is the core
+  // "Yango-style" requirement: the passenger must keep receiving location
+  // updates without interruption for the entire active trip.
+  //
+  // Deliberately keyed only on trip?.driver_id (NOT trip?.status) so the
+  // realtime channel is created exactly once per assigned driver and never
+  // torn down/recreated as status moves accepted -> arrived -> ongoing.
+  // Previously this effect also depended on status, which meant the
+  // subscription was destroyed and rebuilt at every one of those
+  // transitions — the most likely cause of the marker appearing frozen
+  // between status changes.
   useEffect(() => {
     if (!trip?.driver_id) return
-    if (['completed', 'cancelled'].includes(trip.status)) return
+    if (['completed', 'cancelled'].includes(tripStatusRef.current)) return
 
     const loadDriverLocation = async () => {
       const { data } = await supabase
@@ -108,10 +140,8 @@ useEffect(() => {
         .single()
 
       if (data?.current_lat && data?.current_lng) {
-        setDriverLocation({
-          lat: data.current_lat,
-          lng: data.current_lng,
-        })
+        setDriverLocation({ lat: data.current_lat, lng: data.current_lng })
+        setDriverLocationUpdatedAt(Date.now())
       }
     }
 
@@ -133,15 +163,37 @@ useEffect(() => {
               lat: payload.new.current_lat,
               lng: payload.new.current_lng,
             })
+            setDriverLocationUpdatedAt(Date.now())
           }
         }
       )
       .subscribe()
 
+    // Backup poll in case a realtime event is ever dropped (weak signal,
+    // brief disconnect, etc.) — mirrors the trip-status effect's existing
+    // pattern. Skips the query once the trip has actually ended.
+    const pollInterval = setInterval(() => {
+      if (!['completed', 'cancelled'].includes(tripStatusRef.current)) {
+        loadDriverLocation()
+      }
+    }, 7000)
+
+    // Android/mobile browsers commonly suspend background tabs; force a
+    // fresh fetch the moment the passenger returns to the tab instead of
+    // waiting for the next scheduled poll or realtime event.
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        loadDriverLocation()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+
     return () => {
       supabase.removeChannel(driverChannel)
+      clearInterval(pollInterval)
+      document.removeEventListener('visibilitychange', handleVisibility)
     }
-  }, [trip?.driver_id, trip?.status])
+  }, [trip?.driver_id])
 
   // While no driver has accepted yet, show every online tricycle on the
   // map so the passenger can see activity nearby instead of a blank/text
@@ -241,6 +293,11 @@ return (
             No drivers available yet. You can keep waiting or cancel and try again later.
           </p>
         )}
+        {driverLocation && ['accepted', 'arrived', 'ongoing'].includes(trip?.status) && (
+          <p className={`text-xs mt-1 ${isDriverLocationStale ? 'text-orange-500' : 'text-gray-400'}`}>
+            {isDriverLocationStale ? '● Last known location' : '● Live'}
+          </p>
+        )}
       </div>
 
       {driverContact && !['requested', 'completed', 'cancelled'].includes(trip?.status) && (
@@ -303,6 +360,7 @@ return (
               lng: trip.dropoff_lng,
             }}
             driverLocation={driverLocation}
+            driverLocationUpdatedAt={driverLocationUpdatedAt}
             availableDrivers={availableDrivers}
             showCurrentMarker={trip.status !== 'ongoing'}
             routeTarget={

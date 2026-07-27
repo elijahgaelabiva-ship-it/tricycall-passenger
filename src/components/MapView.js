@@ -16,6 +16,15 @@ const destinationIcon = new L.Icon({
   iconAnchor: [12, 41],
 })
 
+// San Felipe, Zambales fallback center. The map must render immediately on
+// open rather than waiting for GPS permission/fix, so this is used as the
+// initial view until the passenger's real location arrives.
+const SAN_FELIPE_CENTER = { lat: 15.186, lng: 120.141 }
+
+// A driver location is considered stale (last-known rather than live) if we
+// haven't received an update in this long.
+const STALE_AFTER_MS = 20000
+
 function ClickHandler({ onMapClick }) {
   useMapEvents({
     click(e) {
@@ -55,7 +64,7 @@ function bearingDegrees(a, b) {
 // Builds the tricycle marker icon, rotated to face the direction of travel.
 // This is a top-down image, so rotating it directly shows the tricycle
 // turning left/right/etc. as it moves — no separate arrow needed.
-function createDriverIcon(bearing) {
+function createDriverIcon(bearing, isStale) {
   const html = `
     <img
       src="/icons/driver-marker-64.png"
@@ -65,6 +74,7 @@ function createDriverIcon(bearing) {
         display: block;
         transform: rotate(${bearing}deg);
         transition: transform 0.3s linear;
+        filter: ${isStale ? 'grayscale(70%)' : 'none'};
       "
     />
   `
@@ -77,10 +87,16 @@ function createDriverIcon(bearing) {
   })
 }
 
-function DriverMarker({ location }) {
+function DriverMarker({ location, updatedAt }) {
   const [bearing, setBearing] = useState(0)
-  const prevLocationRef = useRef(null)
+  const [renderPosition, setRenderPosition] = useState(location)
+  const [isStale, setIsStale] = useState(false)
+  const prevLocationRef = useRef(location)
+  const animRef = useRef(null)
 
+  // Smoothly tween the marker from its last rendered position to the new
+  // one instead of snapping, so movement reads as continuous even though
+  // updates only arrive every few seconds.
   useEffect(() => {
     if (!location) return
 
@@ -89,13 +105,52 @@ function DriverMarker({ location }) {
       setBearing(bearingDegrees(prev, location))
     }
 
+    const from = prevLocationRef.current || location
+    const to = location
     prevLocationRef.current = location
+
+    if (animRef.current) cancelAnimationFrame(animRef.current)
+
+    const duration = 900
+    const start = performance.now()
+
+    const tick = (now) => {
+      const t = Math.min(1, (now - start) / duration)
+      setRenderPosition({
+        lat: from.lat + (to.lat - from.lat) * t,
+        lng: from.lng + (to.lng - from.lng) * t,
+      })
+      if (t < 1) {
+        animRef.current = requestAnimationFrame(tick)
+      }
+    }
+
+    animRef.current = requestAnimationFrame(tick)
+    return () => {
+      if (animRef.current) cancelAnimationFrame(animRef.current)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location?.lat, location?.lng])
+
+  // Recheck staleness periodically (independent of new locations arriving)
+  useEffect(() => {
+    if (!updatedAt) {
+      setIsStale(false)
+      return
+    }
+    const check = () => setIsStale(Date.now() - updatedAt > STALE_AFTER_MS)
+    check()
+    const interval = setInterval(check, 5000)
+    return () => clearInterval(interval)
+  }, [updatedAt])
+
+  if (!renderPosition) return null
 
   return (
     <Marker
-      position={[location.lat, location.lng]}
-      icon={createDriverIcon(bearing)}
+      position={[renderPosition.lat, renderPosition.lng]}
+      icon={createDriverIcon(bearing, isStale)}
+      opacity={isStale ? 0.55 : 1}
     />
   )
 }
@@ -106,6 +161,7 @@ function RouteLayer({ start, end }) {
   const lastStartRef = useRef(null)
   const lastEndRef = useRef(null)
   const hasFitBoundsRef = useRef(false)
+  const requestIdRef = useRef(0)
 
   const clearCurrentRoute = () => {
     if (routeLayerRef.current) {
@@ -114,7 +170,8 @@ function RouteLayer({ start, end }) {
     }
   }
 
-  const drawFallbackStraightLine = (start, end) => {
+  const drawFallbackStraightLine = (start, end, requestId) => {
+    if (requestId !== requestIdRef.current) return // a newer request superseded this one
     clearCurrentRoute()
     const layer = L.polyline(
       [
@@ -127,6 +184,8 @@ function RouteLayer({ start, end }) {
   }
 
   const drawRoute = async (start, end) => {
+    const requestId = ++requestIdRef.current
+
     try {
       const url = `https://router.project-osrm.org/route/v1/driving/${start.lng},${start.lat};${end.lng},${end.lat}?overview=full&geometries=geojson`
       const res = await fetch(url)
@@ -137,6 +196,10 @@ function RouteLayer({ start, end }) {
       const coords = data?.routes?.[0]?.geometry?.coordinates
 
       if (!coords || coords.length === 0) throw new Error('No route found')
+
+      // If a newer route request has started since this one began, drop
+      // this (now-stale) response instead of letting it overwrite the map.
+      if (requestId !== requestIdRef.current) return
 
       clearCurrentRoute()
 
@@ -150,7 +213,7 @@ function RouteLayer({ start, end }) {
       }
     } catch (err) {
       console.log('Route request failed, showing straight-line fallback:', err.message)
-      drawFallbackStraightLine(start, end)
+      drawFallbackStraightLine(start, end, requestId)
     }
   }
 
@@ -177,6 +240,22 @@ function RouteLayer({ start, end }) {
     return () => clearCurrentRoute()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  return null
+}
+
+// Recenters the map exactly once, the moment the passenger's real GPS
+// location first arrives (going from the San Felipe fallback to their
+// actual position). Does not fight manual panning afterward.
+function RecenterOnFirstFix({ location, hasRealFix }) {
+  const map = useMap()
+  const didRecenterRef = useRef(false)
+
+  useEffect(() => {
+    if (!hasRealFix || didRecenterRef.current || !location) return
+    didRecenterRef.current = true
+    map.setView([location.lat, location.lng], 16)
+  }, [hasRealFix, location?.lat, location?.lng, map])
 
   return null
 }
@@ -337,40 +416,27 @@ export default function MapView({
   currentLocation,
   destination,
   driverLocation,
+  driverLocationUpdatedAt,
   routeTarget,
   onMapClick,
   onDestinationSelect,
   availableDrivers,
   showCurrentMarker = true,
 }) {
-  // currentLocation is often still null/undefined for a moment while the
-  // browser is requesting GPS/location permission. Rendering the map before
-  // it's ready crashes on `currentLocation.lat`, so show a loading state.
-  if (!currentLocation) {
-    return (
-      <div
-        style={{
-          height: '100%',
-          width: '100%',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: '#666',
-          fontSize: 14,
-        }}
-      >
-        Getting your location...
-      </div>
-    )
-  }
+  // The map must render immediately rather than waiting for GPS — use the
+  // San Felipe fallback center until the passenger's real location arrives,
+  // then recenter once (RecenterOnFirstFix), without ever recreating
+  // MapContainer.
+  const hasRealFix = Boolean(currentLocation)
+  const mapCenter = currentLocation || SAN_FELIPE_CENTER
 
   return (
     <div style={{ position: 'relative', height: '100%', width: '100%' }}>
       {onDestinationSelect && (
-        <DestinationSearchBox onSelect={onDestinationSelect} biasCenter={currentLocation} />
+        <DestinationSearchBox onSelect={onDestinationSelect} biasCenter={mapCenter} />
       )}
       <MapContainer
-        center={[currentLocation.lat, currentLocation.lng]}
+        center={[mapCenter.lat, mapCenter.lng]}
         zoom={15}
         style={{ height: '100%', width: '100%' }}
       >
@@ -378,13 +444,15 @@ export default function MapView({
           url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
           attribution='&copy; OpenStreetMap contributors &copy; CARTO'
         />
-        {driverLocation && <DriverMarker location={driverLocation} />}
+        {driverLocation && (
+          <DriverMarker location={driverLocation} updatedAt={driverLocationUpdatedAt} />
+        )}
         {!driverLocation &&
           availableDrivers &&
           availableDrivers.map((d) => (
             <DriverMarker key={d.id} location={{ lat: d.current_lat, lng: d.current_lng }} />
           ))}
-        {showCurrentMarker && (
+        {showCurrentMarker && currentLocation && (
           <Marker position={[currentLocation.lat, currentLocation.lng]} icon={currentIcon} />
         )}
         {destination && (
@@ -393,6 +461,7 @@ export default function MapView({
             <FlyToLocation location={destination} />
           </>
         )}
+        <RecenterOnFirstFix location={currentLocation} hasRealFix={hasRealFix} />
         {(() => {
           // On the booking screen there's no driver assigned yet, so fall
           // back to drawing the route from the passenger's own location to
