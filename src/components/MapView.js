@@ -6,8 +6,8 @@ import L from 'leaflet'
 
 const currentIcon = new L.Icon({
   iconUrl: '/icons/passenger-marker.png',
-  iconSize: [39, 46], // matches the badge's real aspect ratio — do not force-square this
-  iconAnchor: [0, 19], // the pointing fingertip
+  iconSize: [46, 46], // true square canvas — artwork padded, not stretched or cropped
+  iconAnchor: [4, 19], // the pointing fingertip
 })
 
 const destinationIcon = new L.Icon({
@@ -92,11 +92,17 @@ function DriverMarker({ location, updatedAt }) {
   const [renderPosition, setRenderPosition] = useState(location)
   const [isStale, setIsStale] = useState(false)
   const prevLocationRef = useRef(location)
+  const lastUpdateTimeRef = useRef(null)
   const animRef = useRef(null)
 
   // Smoothly tween the marker from its last rendered position to the new
-  // one instead of snapping, so movement reads as continuous even though
-  // updates only arrive every few seconds.
+  // one instead of snapping. The tween duration matches the real-world time
+  // since the previous update (clamped to a sane range) rather than a fixed
+  // short duration — otherwise, when updates only arrive every 6-8s (as
+  // they do here, since GPS writes are throttled to save mobile data), a
+  // short fixed tween finishes almost immediately and the marker then sits
+  // frozen for the rest of the interval, which reads as jerky rather than
+  // a continuous glide like Yango.
   useEffect(() => {
     if (!location) return
 
@@ -109,13 +115,25 @@ function DriverMarker({ location, updatedAt }) {
     const to = location
     prevLocationRef.current = location
 
+    const now = performance.now()
+    const prevUpdateTime = lastUpdateTimeRef.current
+    lastUpdateTimeRef.current = now
+
+    // Default to a quick tween for the very first position; after that,
+    // stretch the animation across however long the last interval actually
+    // was, so continuous motion is maintained between real GPS updates.
+    let duration = 900
+    if (prevUpdateTime) {
+      const elapsed = now - prevUpdateTime
+      duration = Math.min(8000, Math.max(900, elapsed))
+    }
+
     if (animRef.current) cancelAnimationFrame(animRef.current)
 
-    const duration = 900
-    const start = performance.now()
+    const start = now
 
-    const tick = (now) => {
-      const t = Math.min(1, (now - start) / duration)
+    const tick = (t2) => {
+      const t = Math.min(1, (t2 - start) / duration)
       setRenderPosition({
         lat: from.lat + (to.lat - from.lat) * t,
         lng: from.lng + (to.lng - from.lng) * t,
