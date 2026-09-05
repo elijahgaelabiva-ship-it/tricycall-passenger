@@ -317,6 +317,38 @@ export default function BookPage() {
               <p className="text-xs text-gray-400 mt-1">TRICYCALL.SF Passenger</p>
             </div>
 
+            <div className="mt-6 space-y-1">
+              <button
+                onClick={() => router.push('/profile')}
+                className="w-full flex items-center gap-3 px-2 py-3 rounded-xl hover:bg-gray-50 transition text-left"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+                <span className="text-gray-700 font-medium">Edit Profile</span>
+              </button>
+
+              <button
+                onClick={() => router.push('/history')}
+                className="w-full flex items-center gap-3 px-2 py-3 rounded-xl hover:bg-gray-50 transition text-left"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span className="text-gray-700 font-medium">Trip History</span>
+              </button>
+
+              <button
+                onClick={() => router.push('/payment-method')}
+                className="w-full flex items-center gap-3 px-2 py-3 rounded-xl hover:bg-gray-50 transition text-left"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+                <span className="text-gray-700 font-medium">Payment Method</span>
+              </button>
+            </div>
+
             <button
               onClick={async () => {
                 await supabase.auth.signOut()
