@@ -34,6 +34,53 @@ function ClickHandler({ onMapClick }) {
   return null
 }
 
+const PRIMARY_TILE_URL = `https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png?key=${process.env.NEXT_PUBLIC_CARTO_API_KEY}`
+const FALLBACK_TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
+
+// Automatically switches from CARTO to plain OpenStreetMap tiles if the
+// primary source starts failing repeatedly (e.g. CARTO outage, an expired/
+// misconfigured API key, or a future policy change like the one that broke
+// this app in August 2026). This is a genuine emergency fallback, not a
+// long-term substitute — OSM's own tile servers have a strict usage policy
+// and aren't meant to carry real production traffic. It only ever engages
+// when the primary source is actively broken, so normal usage never touches
+// it, but it means passengers/drivers see a working map instead of a
+// watermarked/broken one during an outage.
+function ResilientTileLayer() {
+  const [useFallback, setUseFallback] = useState(false)
+  const errorCountRef = useRef(0)
+  const errorWindowStartRef = useRef(null)
+
+  const handleTileError = () => {
+    if (useFallback) return
+
+    const now = Date.now()
+    if (!errorWindowStartRef.current || now - errorWindowStartRef.current > 10000) {
+      errorWindowStartRef.current = now
+      errorCountRef.current = 0
+    }
+    errorCountRef.current += 1
+
+    if (errorCountRef.current >= 5) {
+      console.log('Primary map tiles failing repeatedly — switching to fallback tile source.')
+      setUseFallback(true)
+    }
+  }
+
+  return (
+    <TileLayer
+      key={useFallback ? 'fallback' : 'primary'}
+      url={useFallback ? FALLBACK_TILE_URL : PRIMARY_TILE_URL}
+      attribution={
+        useFallback
+          ? '&copy; OpenStreetMap contributors'
+          : '&copy; OpenStreetMap contributors &copy; CARTO'
+      }
+      eventHandlers={{ tileerror: handleTileError }}
+    />
+  )
+}
+
 function distanceMeters(a, b) {
   const R = 6371000
   const dLat = ((b.lat - a.lat) * Math.PI) / 180
@@ -65,6 +112,10 @@ function bearingDegrees(a, b) {
 // This is a top-down image, so rotating it directly shows the tricycle
 // turning left/right/etc. as it moves — no separate arrow needed.
 function createDriverIcon(bearing, isStale) {
+  // The source tricycle photo has its front (handlebars/wheel) pointing
+  // toward the bottom of the image, not the top — so a raw bearing rotation
+  // shows it driving rear-first. +180 corrects for that.
+  const displayRotation = bearing + 180
   const html = `
     <img
       src="/icons/driver-marker-v2.png"
@@ -72,7 +123,7 @@ function createDriverIcon(bearing, isStale) {
         width: 48px;
         height: 48px;
         display: block;
-        transform: rotate(${bearing}deg);
+        transform: rotate(${displayRotation}deg);
         transition: transform 0.3s linear;
         filter: ${isStale ? 'grayscale(70%)' : 'none'};
       "
@@ -81,7 +132,7 @@ function createDriverIcon(bearing, isStale) {
 
   return L.divIcon({
     html,
-    className: '',
+    className: 'driver-marker-icon',
     iconSize: [48, 48],
     iconAnchor: [24, 24],
   })
@@ -89,20 +140,9 @@ function createDriverIcon(bearing, isStale) {
 
 function DriverMarker({ location, updatedAt }) {
   const [bearing, setBearing] = useState(0)
-  const [renderPosition, setRenderPosition] = useState(location)
   const [isStale, setIsStale] = useState(false)
-  const prevLocationRef = useRef(location)
-  const lastUpdateTimeRef = useRef(null)
-  const animRef = useRef(null)
+  const prevLocationRef = useRef(null)
 
-  // Smoothly tween the marker from its last rendered position to the new
-  // one instead of snapping. The tween duration matches the real-world time
-  // since the previous update (clamped to a sane range) rather than a fixed
-  // short duration — otherwise, when updates only arrive every 6-8s (as
-  // they do here, since GPS writes are throttled to save mobile data), a
-  // short fixed tween finishes almost immediately and the marker then sits
-  // frozen for the rest of the interval, which reads as jerky rather than
-  // a continuous glide like Yango.
   useEffect(() => {
     if (!location) return
 
@@ -111,43 +151,7 @@ function DriverMarker({ location, updatedAt }) {
       setBearing(bearingDegrees(prev, location))
     }
 
-    const from = prevLocationRef.current || location
-    const to = location
     prevLocationRef.current = location
-
-    const now = performance.now()
-    const prevUpdateTime = lastUpdateTimeRef.current
-    lastUpdateTimeRef.current = now
-
-    // Default to a quick tween for the very first position; after that,
-    // stretch the animation across however long the last interval actually
-    // was, so continuous motion is maintained between real GPS updates.
-    let duration = 900
-    if (prevUpdateTime) {
-      const elapsed = now - prevUpdateTime
-      duration = Math.min(8000, Math.max(900, elapsed))
-    }
-
-    if (animRef.current) cancelAnimationFrame(animRef.current)
-
-    const start = now
-
-    const tick = (t2) => {
-      const t = Math.min(1, (t2 - start) / duration)
-      setRenderPosition({
-        lat: from.lat + (to.lat - from.lat) * t,
-        lng: from.lng + (to.lng - from.lng) * t,
-      })
-      if (t < 1) {
-        animRef.current = requestAnimationFrame(tick)
-      }
-    }
-
-    animRef.current = requestAnimationFrame(tick)
-    return () => {
-      if (animRef.current) cancelAnimationFrame(animRef.current)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location?.lat, location?.lng])
 
   // Recheck staleness periodically (independent of new locations arriving)
@@ -162,11 +166,11 @@ function DriverMarker({ location, updatedAt }) {
     return () => clearInterval(interval)
   }, [updatedAt])
 
-  if (!renderPosition) return null
+  if (!location) return null
 
   return (
     <Marker
-      position={[renderPosition.lat, renderPosition.lng]}
+      position={[location.lat, location.lng]}
       icon={createDriverIcon(bearing, isStale)}
       opacity={isStale ? 0.55 : 1}
     />
@@ -276,6 +280,75 @@ function RecenterOnFirstFix({ location, hasRealFix }) {
   }, [hasRealFix, location?.lat, location?.lng, map])
 
   return null
+}
+
+// Google-Maps-navigation-style auto-follow: keeps the map centered (and at a
+// fixed nav zoom) on `target` (the driver, once assigned) as it moves, while
+// `active`. Pauses the moment the passenger manually drags or zooms the map
+// — never fights their interaction — and shows a small recenter button to
+// resume following.
+function FollowMode({ target, active, zoom = 17 }) {
+  const map = useMap()
+  const [following, setFollowing] = useState(true)
+  const programmaticRef = useRef(false)
+
+  useEffect(() => {
+    const onUserInteraction = () => {
+      if (programmaticRef.current) return
+      setFollowing(false)
+    }
+    map.on('dragstart', onUserInteraction)
+    map.on('zoomstart', onUserInteraction)
+    return () => {
+      map.off('dragstart', onUserInteraction)
+      map.off('zoomstart', onUserInteraction)
+    }
+  }, [map])
+
+  useEffect(() => {
+    if (!active || !following || !target) return
+    programmaticRef.current = true
+    map.flyTo([target.lat, target.lng], zoom, { duration: 1, animate: true })
+    const t = setTimeout(() => {
+      programmaticRef.current = false
+    }, 1200)
+    return () => clearTimeout(t)
+  }, [active, following, target?.lat, target?.lng, map, zoom])
+
+  useEffect(() => {
+    if (active) setFollowing(true)
+  }, [active])
+
+  if (!active || following) return null
+
+  return (
+    <button
+      onClick={(e) => {
+        e.stopPropagation()
+        setFollowing(true)
+      }}
+      style={{
+        position: 'absolute',
+        bottom: 90,
+        right: 12,
+        zIndex: 1000,
+        background: 'white',
+        border: 'none',
+        borderRadius: '50%',
+        width: 46,
+        height: 46,
+        boxShadow: '0 2px 10px rgba(0,0,0,0.25)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        cursor: 'pointer',
+        fontSize: 20,
+      }}
+      aria-label="Recenter map"
+    >
+      🎯
+    </button>
+  )
 }
 
 // Flies the map to a location whenever it changes (e.g. after the passenger
@@ -450,6 +523,11 @@ export default function MapView({
 
   return (
     <div style={{ position: 'relative', height: '100%', width: '100%' }}>
+      <style jsx global>{`
+        .driver-marker-icon {
+          transition: transform 1.4s ease-out;
+        }
+      `}</style>
       {onDestinationSelect && (
         <DestinationSearchBox onSelect={onDestinationSelect} biasCenter={mapCenter} />
       )}
@@ -458,10 +536,7 @@ export default function MapView({
         zoom={15}
         style={{ height: '100%', width: '100%' }}
       >
-        <TileLayer
-          url={`https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png?key=${process.env.NEXT_PUBLIC_CARTO_API_KEY}`}
-          attribution='&copy; OpenStreetMap contributors &copy; CARTO'
-        />
+        <ResilientTileLayer />
         {driverLocation && (
           <DriverMarker location={driverLocation} updatedAt={driverLocationUpdatedAt} />
         )}
@@ -480,6 +555,7 @@ export default function MapView({
           </>
         )}
         <RecenterOnFirstFix location={currentLocation} hasRealFix={hasRealFix} />
+        <FollowMode target={driverLocation} active={Boolean(driverLocation)} />
         {(() => {
           // On the booking screen there's no driver assigned yet, so fall
           // back to drawing the route from the passenger's own location to
