@@ -149,7 +149,7 @@ function prev(){if(current>0){current--;render()}}
 function finish(){
   localStorage.setItem('tricycall_intro_seen','1');
   // Change this to the real TRICYCALL home page if needed.
-  window.location.href='/login';
+  window.location.href='/login?from=intro';
 }
 // Swipe support
 let sx=0;
