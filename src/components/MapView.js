@@ -1,7 +1,15 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-leaflet'
+import {
+  MapContainer,
+  TileLayer,
+  Marker,
+  ZoomControl,
+  AttributionControl,
+  useMap,
+  useMapEvents,
+} from 'react-leaflet'
 import L from 'leaflet'
 
 const currentIcon = new L.Icon({
@@ -371,7 +379,7 @@ function FlyToLocation({ location }) {
 // "Where to?" search box overlaid on the map. Debounces requests to
 // Nominatim (OSM's free geocoder) as the passenger types, shows matching
 // addresses, and reports the chosen lat/lng back to the parent.
-function DestinationSearchBox({ onSelect, biasCenter }) {
+function DestinationSearchBox({ onSelect, biasCenter, inset = 12 }) {
   const [query, setQuery] = useState('')
   const [suggestions, setSuggestions] = useState([])
   const [loading, setLoading] = useState(false)
@@ -435,37 +443,64 @@ function DestinationSearchBox({ onSelect, biasCenter }) {
   }
 
   return (
-    <div style={{ position: 'absolute', top: 12, left: 12, right: 12, zIndex: 1000 }}>
-      <input
-        type="text"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="Where to?"
-        style={{
-          width: '100%',
-          padding: '14px 18px',
-          borderRadius: 999,
-          border: 'none',
-          backgroundColor: '#e0e0e0',
-          color: '#1a1a1a',
-          boxShadow: '0 2px 10px rgba(0,0,0,0.2)',
-          fontSize: 16,
-          textAlign: 'center',
-          outline: 'none',
-          boxSizing: 'border-box',
-        }}
-      />
+    <div
+      style={{
+        position: 'absolute',
+        top: 'max(12px, env(safe-area-inset-top))',
+        left: inset,
+        right: 12,
+        zIndex: 1000,
+      }}
+    >
+      <div style={{ position: 'relative' }}>
+        <svg
+          width="20"
+          height="20"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="#66727d"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+          style={{ position: 'absolute', left: 16, top: 14, pointerEvents: 'none' }}
+        >
+          <circle cx="11" cy="11" r="7" />
+          <path d="M20 20l-3.5-3.5" />
+        </svg>
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Where to?"
+          style={{
+            width: '100%',
+            height: 48,
+            padding: '0 16px 0 44px',
+            borderRadius: 24,
+            border: 'none',
+            backgroundColor: '#ffffff',
+            color: '#17212b',
+            boxShadow: '0 2px 12px rgba(23,33,43,0.22)',
+            fontSize: 16,
+            fontWeight: 600,
+            textAlign: 'left',
+            outline: 'none',
+            boxSizing: 'border-box',
+          }}
+        />
+      </div>
 
       {loading && (
         <div
           style={{
             background: 'white',
-            borderRadius: 12,
-            marginTop: 6,
-            padding: '10px 16px',
-            boxShadow: '0 2px 10px rgba(0,0,0,0.15)',
+            borderRadius: 16,
+            marginTop: 8,
+            padding: '12px 16px',
+            boxShadow: '0 2px 12px rgba(23,33,43,0.18)',
             fontSize: 14,
-            color: '#666',
+            color: '#66727d',
           }}
         >
           Searching...
@@ -476,10 +511,12 @@ function DestinationSearchBox({ onSelect, biasCenter }) {
         <div
           style={{
             background: 'white',
-            borderRadius: 12,
-            marginTop: 6,
-            boxShadow: '0 2px 10px rgba(0,0,0,0.15)',
+            borderRadius: 16,
+            marginTop: 8,
+            boxShadow: '0 2px 12px rgba(23,33,43,0.18)',
             overflow: 'hidden',
+            maxHeight: '45vh',
+            overflowY: 'auto',
           }}
         >
           {suggestions.map((place) => (
@@ -487,10 +524,12 @@ function DestinationSearchBox({ onSelect, biasCenter }) {
               key={place.place_id}
               onClick={() => handleSelect(place)}
               style={{
-                padding: '12px 16px',
-                borderBottom: '1px solid #eee',
+                padding: '13px 16px',
+                borderBottom: '1px solid #e3ecee',
                 cursor: 'pointer',
                 fontSize: 14,
+                lineHeight: 1.35,
+                color: '#17212b',
                 textAlign: 'left',
               }}
             >
@@ -513,6 +552,7 @@ export default function MapView({
   onDestinationSelect,
   availableDrivers,
   showCurrentMarker = true,
+  searchInset = 12,
 }) {
   // The map must render immediately rather than waiting for GPS — use the
   // San Felipe fallback center until the passenger's real location arrives,
@@ -529,13 +569,21 @@ export default function MapView({
         }
       `}</style>
       {onDestinationSelect && (
-        <DestinationSearchBox onSelect={onDestinationSelect} biasCenter={mapCenter} />
+        <DestinationSearchBox
+          onSelect={onDestinationSelect}
+          biasCenter={mapCenter}
+          inset={searchInset}
+        />
       )}
       <MapContainer
         center={[mapCenter.lat, mapCenter.lng]}
         zoom={15}
+        zoomControl={false}
+        attributionControl={false}
         style={{ height: '100%', width: '100%' }}
       >
+        <ZoomControl position="bottomright" />
+        <AttributionControl position="bottomleft" prefix={false} />
         <ResilientTileLayer />
         {driverLocation && (
           <DriverMarker location={driverLocation} updatedAt={driverLocationUpdatedAt} />
