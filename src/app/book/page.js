@@ -224,27 +224,38 @@ export default function BookPage() {
     router.push(`/trip/${data.id}`)
   }
 
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+    router.push('/login')
+  }
+
+  const onlineCount = availableDrivers.length
+
+  const menuItems = [
+    { label: 'Edit profile', href: '/profile', icon: <PersonIcon /> },
+    { label: 'Trip history', href: '/history', icon: <ClockIcon /> },
+    { label: 'Payment method', href: '/payment-method', icon: <CardIcon /> },
+  ]
+
   if (checkingStatus) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-white">
-        <p className="text-gray-500">Loading...</p>
+      <div className="min-h-screen flex items-center justify-center bg-mist">
+        <p className="text-mute font-medium">Loading...</p>
       </div>
     )
   }
 
   if (blockedMessage) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-white px-4">
-        <div className="text-center space-y-4 max-w-sm">
-          <p className="text-red-600 font-semibold">{blockedMessage}</p>
+      <div className="min-h-screen flex items-center justify-center bg-mist px-6">
+        <div className="w-full max-w-sm rounded-2xl border border-line bg-white p-6 text-center">
+          <h1 className="text-xl font-extrabold text-ink">Account restricted</h1>
+          <p className="mt-2 text-sm leading-relaxed text-mute">{blockedMessage}</p>
           <button
-            onClick={async () => {
-              await supabase.auth.signOut()
-              router.push('/login')
-            }}
-            className="text-green-600 text-sm underline"
+            onClick={handleLogout}
+            className="mt-5 h-11 w-full rounded-xl border border-line font-semibold text-ink"
           >
-            Logout
+            Log out
           </button>
         </div>
       </div>
@@ -252,117 +263,30 @@ export default function BookPage() {
   }
 
   return (
-    <div className="h-screen bg-white flex flex-col overflow-hidden">
-      <div className="p-4 bg-white shadow-sm z-10 relative">
+    <div className="flex h-dvh flex-col overflow-hidden bg-mist">
+      {/* Map with floating menu button and search */}
+      <div className="relative min-h-0 flex-1 [&_.leaflet-bottom]:mb-6">
         <button
           onClick={() => setMenuOpen(true)}
-          className="absolute top-4 left-4 p-1 text-gray-700"
+          className="absolute left-3 top-[max(12px,env(safe-area-inset-top))] flex h-12 w-12 items-center justify-center rounded-full bg-white text-ink shadow-[0_2px_12px_rgba(23,33,43,0.22)] active:bg-mist"
+          style={{ zIndex: 1001 }}
           aria-label="Open menu"
         >
           <svg
-            xmlns="http://www.w3.org/2000/svg"
-            className="h-6 w-6"
-            fill="none"
+            width="22"
+            height="22"
             viewBox="0 0 24 24"
+            fill="none"
             stroke="currentColor"
-            strokeWidth={2}
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
           >
-            <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+            <path d="M4 7h16M4 12h16M4 17h16" />
           </svg>
         </button>
 
-        <h1 className="text-xl font-bold text-green-600 text-center">
-          Where are you going?
-        </h1>
-        {locationError && (
-          <p className="text-red-600 text-sm text-center mt-2">{locationError}</p>
-        )}
-      </div>
-
-      {menuOpen && (
-        <div className="fixed inset-0 flex" style={{ zIndex: 9999 }}>
-          {/* Backdrop */}
-          <div
-            className="absolute inset-0 bg-black/40"
-            onClick={() => setMenuOpen(false)}
-          />
-
-          {/* Slide-in panel */}
-          <div className="relative w-72 max-w-[80%] h-full bg-white shadow-xl p-6 flex flex-col">
-            <button
-              onClick={() => setMenuOpen(false)}
-              className="self-end text-gray-400 text-2xl leading-none mb-4"
-              aria-label="Close menu"
-            >
-              &times;
-            </button>
-
-            <div className="flex flex-col items-center text-center">
-              {passengerProfile?.avatar_url ? (
-                <img
-                  src={passengerProfile.avatar_url}
-                  alt={passengerProfile.full_name}
-                  className="w-20 h-20 rounded-full object-cover"
-                />
-              ) : (
-                <div className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center text-green-700 font-bold text-2xl">
-                  {passengerProfile?.full_name?.charAt(0).toUpperCase() || '?'}
-                </div>
-              )}
-
-              <p className="font-semibold text-gray-800 mt-3">
-                {passengerProfile?.full_name}
-              </p>
-              <p className="text-sm text-gray-500">{passengerProfile?.phone}</p>
-              <p className="text-xs text-gray-400 mt-1">TRICYCALL.SF Passenger</p>
-            </div>
-
-            <div className="mt-6 space-y-1">
-              <button
-                onClick={() => router.push('/profile')}
-                className="w-full flex items-center gap-3 px-2 py-3 rounded-xl hover:bg-gray-50 transition text-left"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                </svg>
-                <span className="text-gray-700 font-medium">Edit Profile</span>
-              </button>
-
-              <button
-                onClick={() => router.push('/history')}
-                className="w-full flex items-center gap-3 px-2 py-3 rounded-xl hover:bg-gray-50 transition text-left"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <span className="text-gray-700 font-medium">Trip History</span>
-              </button>
-
-              <button
-                onClick={() => router.push('/payment-method')}
-                className="w-full flex items-center gap-3 px-2 py-3 rounded-xl hover:bg-gray-50 transition text-left"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                </svg>
-                <span className="text-gray-700 font-medium">Payment Method</span>
-              </button>
-            </div>
-
-            <button
-              onClick={async () => {
-                await supabase.auth.signOut()
-                router.push('/login')
-              }}
-              className="mt-auto w-full bg-gray-100 text-gray-700 rounded-xl py-3 font-semibold hover:bg-gray-200 transition"
-            >
-              Logout
-            </button>
-          </div>
-        </div>
-      )}
-
-      <div className="flex-1 rounded-2xl overflow-hidden" style={{ position: 'relative' }}>
         {currentLocation ? (
           <MapView
             currentLocation={currentLocation}
@@ -370,43 +294,237 @@ export default function BookPage() {
             onMapClick={handleMapClick}
             onDestinationSelect={handleDestinationSelect}
             availableDrivers={availableDrivers}
+            searchInset={72}
           />
         ) : (
-          <div className="flex items-center justify-center h-full">
-            <p className="text-gray-500">Detecting your location...</p>
+          <div className="flex h-full items-center justify-center">
+            <p className="font-medium text-mute">Detecting your location...</p>
           </div>
         )}
       </div>
 
-      <div className="p-4 bg-white shadow-inner space-y-2">
-        {!destination && (
-          <p className="text-sm text-gray-600">Tap on the map to set your destination</p>
+      {/* Booking sheet */}
+      <div
+        className="relative -mt-6 rounded-t-[28px] bg-white px-5 pt-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-[0_-8px_24px_rgba(23,33,43,0.12)]"
+        style={{ zIndex: 1100 }}
+      >
+        <div className="flex items-center gap-2 text-sm font-semibold text-mute">
+          <span
+            className={`h-2.5 w-2.5 rounded-full ${onlineCount > 0 ? 'bg-live' : 'bg-line'}`}
+          />
+          {onlineCount > 0
+            ? `${onlineCount} ${onlineCount === 1 ? 'tricycle' : 'tricycles'} online`
+            : 'No tricycles online right now'}
+        </div>
+
+        {locationError && (
+          <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">
+            {locationError}
+          </p>
         )}
 
-        {destination && distanceKm !== null && (
-          <div className="text-sm text-gray-700 space-y-1">
-            {destinationAddress && (
-              <p className="text-gray-800 font-medium truncate">{destinationAddress}</p>
-            )}
-            <p>Distance: {distanceKm.toFixed(2)} km</p>
-            <p className="font-semibold text-green-700">
-              Estimated Fare: ₱{estimatedFare.toFixed(2)}
+        {!destination ? (
+          <div className="mt-3">
+            <p className="text-xl font-extrabold text-ink">Where are you going?</p>
+            <p className="mt-0.5 text-sm text-mute">
+              Search above or tap the map to set your destination.
             </p>
+          </div>
+        ) : (
+          <div className="mt-3">
+            <p className="flex items-start gap-2 text-sm font-semibold text-ink">
+              <PinIcon />
+              <span className="line-clamp-2 min-w-0">
+                {destinationAddress || 'Pinned location'}
+              </span>
+            </p>
+
+            {distanceKm !== null && estimatedFare !== null ? (
+              <div className="mt-3 flex items-end justify-between gap-3">
+                <div>
+                  <p className="text-xs text-mute">Estimated fare</p>
+                  <p className="text-3xl font-extrabold tabular-nums text-ink">
+                    ₱{estimatedFare.toFixed(2)}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs text-mute">Distance</p>
+                  <p className="text-lg font-bold tabular-nums text-ink">
+                    {distanceKm.toFixed(2)} km
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <p className="mt-3 text-sm text-mute">Calculating fare...</p>
+            )}
           </div>
         )}
 
-        {requestError && (
-          <p className="text-red-600 text-sm">{requestError}</p>
-        )}
+        {requestError && <p className="mt-3 text-sm text-red-600">{requestError}</p>}
 
         <button
           onClick={handleRequestRide}
           disabled={!destination || requesting || estimatedFare === null}
-          className="w-full bg-green-600 text-white rounded-xl py-3 font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
+          className="mt-4 h-14 w-full rounded-2xl bg-signal text-base font-bold text-ink active:bg-signal-dark disabled:cursor-not-allowed disabled:opacity-40"
         >
-          {requesting ? 'Requesting...' : 'Request Ride'}
+          {requesting ? 'Requesting...' : 'Request ride'}
         </button>
       </div>
+
+      {/* Side menu */}
+      {menuOpen && (
+        <div className="fixed inset-0 flex" style={{ zIndex: 9999 }}>
+          <div
+            className="absolute inset-0 bg-ink/50"
+            onClick={() => setMenuOpen(false)}
+          />
+
+          <aside className="menu-slide-in relative flex h-full w-80 max-w-[86%] flex-col bg-white shadow-xl">
+            <div className="rounded-br-[28px] bg-ink px-6 pb-6 pt-[max(1rem,env(safe-area-inset-top))] text-white">
+              <div className="flex justify-end">
+                <button
+                  onClick={() => setMenuOpen(false)}
+                  className="-mr-2 flex h-10 w-10 items-center justify-center rounded-full text-white/80 active:bg-white/10"
+                  aria-label="Close menu"
+                >
+                  <svg
+                    width="22"
+                    height="22"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M6 6l12 12M18 6L6 18" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="flex items-center gap-4">
+                {passengerProfile?.avatar_url ? (
+                  <img
+                    src={passengerProfile.avatar_url}
+                    alt=""
+                    className="h-16 w-16 rounded-full object-cover ring-2 ring-white/30 ring-offset-2 ring-offset-ink"
+                  />
+                ) : (
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-white/10 text-2xl font-bold">
+                    {passengerProfile?.full_name?.charAt(0).toUpperCase() || '?'}
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <p className="truncate text-xl font-bold">{passengerProfile?.full_name}</p>
+                  <p className="text-sm text-white/70">{passengerProfile?.phone}</p>
+                </div>
+              </div>
+            </div>
+
+            <nav className="mt-3 flex-1 px-3">
+              {menuItems.map((item) => (
+                <button
+                  key={item.href}
+                  onClick={() => router.push(item.href)}
+                  className="flex h-14 w-full items-center gap-4 rounded-xl px-3 text-left text-ink active:bg-mist"
+                >
+                  <span className="text-mute">{item.icon}</span>
+                  <span className="flex-1 font-semibold">{item.label}</span>
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="text-line"
+                    aria-hidden="true"
+                  >
+                    <path d="M9 6l6 6-6 6" />
+                  </svg>
+                </button>
+              ))}
+            </nav>
+
+            <div className="px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+              <button
+                onClick={handleLogout}
+                className="h-12 w-full rounded-xl border border-line font-semibold text-ink active:bg-mist"
+              >
+                Log out
+              </button>
+              <p className="mt-3 text-center text-xs text-mute">TRICYCALL.SF Passenger</p>
+            </div>
+          </aside>
+        </div>
+      )}
     </div>
+  )
+}
+
+function IconBase({ children }) {
+  return (
+    <svg
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {children}
+    </svg>
+  )
+}
+
+function PersonIcon() {
+  return (
+    <IconBase>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 21a8 8 0 0116 0" />
+    </IconBase>
+  )
+}
+
+function ClockIcon() {
+  return (
+    <IconBase>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </IconBase>
+  )
+}
+
+function CardIcon() {
+  return (
+    <IconBase>
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="M3 10h18M7 15h3" />
+    </IconBase>
+  )
+}
+
+function PinIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="mt-0.5 shrink-0 text-signal"
+      aria-hidden="true"
+    >
+      <path d="M12 21s-7-6.2-7-11a7 7 0 1114 0c0 4.8-7 11-7 11z" />
+      <circle cx="12" cy="10" r="2.5" />
+    </svg>
   )
 }
