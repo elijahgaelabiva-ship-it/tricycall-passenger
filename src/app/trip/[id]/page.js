@@ -221,12 +221,12 @@ useEffect(() => {
   }, [trip?.status])
 
   const statusMessages = {
-    requested: 'Looking for a nearby driver...',
-    accepted: 'A driver is on the way!',
-    arrived: 'Your driver has arrived!',
-    ongoing: 'Trip in progress',
-    completed: 'Trip completed',
-    cancelled: 'Trip cancelled',
+    requested: { title: 'Looking for a driver', sub: "Hang tight, we're contacting tricycles near you." },
+    accepted: { title: 'Driver on the way', sub: 'Your driver is heading to your pickup point.' },
+    arrived: { title: 'Your driver has arrived', sub: 'Meet your driver at the pickup point.' },
+    ongoing: { title: 'Trip in progress', sub: "You're on your way." },
+    completed: { title: 'Trip completed', sub: 'Thanks for riding with TRICYCALL.SF.' },
+    cancelled: { title: 'Trip cancelled', sub: 'This ride was cancelled.' },
   }
 
   const submitRating = async () => {
@@ -275,178 +275,268 @@ useEffect(() => {
     trip &&
     !['completed', 'cancelled'].includes(trip.status)
 
-return (
-    <div className="min-h-screen bg-white flex flex-col">
-      <div className="p-4 text-center relative">
-        <h1 className="text-2xl font-bold text-green-600">
-          {trip ? statusMessages[trip.status] : 'Loading...'}
-        </h1>
+const isActive = trip && ['requested', 'accepted', 'arrived', 'ongoing'].includes(trip.status)
+  const hasDriver = trip && ['accepted', 'arrived', 'ongoing'].includes(trip.status)
+  const message = trip ? statusMessages[trip.status] : null
 
-        {trip && (
-          <div className="text-gray-700 mt-1">
-            <p>Fare: ₱{Number(trip.fare).toFixed(2)}</p>
-            <p>Distance: {Number(trip.distance_km).toFixed(2)} km</p>
-          </div>
-        )}
-        {trip?.status === 'requested' && showNoDriversHint && (
-          <p className="text-sm text-orange-500 mt-2">
-            No drivers available yet. You can keep waiting or cancel and try again later.
-          </p>
-        )}
-        {driverLocation && ['accepted', 'arrived', 'ongoing'].includes(trip?.status) && (
-          <p className={`text-xs mt-1 ${isDriverLocationStale ? 'text-orange-500' : 'text-gray-400'}`}>
-            {isDriverLocationStale ? '● Last known location' : '● Live'}
-          </p>
-        )}
+  if (!trip) {
+    return (
+      <div className="min-h-screen bg-mist" aria-busy="true">
+        <div className="mx-auto w-full max-w-md">
+          <div className="h-48 rounded-b-[28px] bg-ink" />
+          <div className="mx-4 mt-4 h-64 rounded-2xl bg-white motion-safe:animate-pulse" />
+        </div>
       </div>
+    )
+  }
 
-      {driverContact && !['requested', 'completed', 'cancelled'].includes(trip?.status) && (
-        <div className="mx-4 mb-2 p-4 bg-green-50 rounded-xl flex items-center gap-3">
-          {driverContact.avatar_url ? (
-            <img
-              src={driverContact.avatar_url}
-              alt={driverContact.full_name}
-              className="w-14 h-14 rounded-full object-cover flex-shrink-0"
-            />
-          ) : (
-            <div className="w-14 h-14 rounded-full bg-green-200 flex items-center justify-center text-green-700 font-bold text-lg flex-shrink-0">
-              {driverContact.full_name?.charAt(0).toUpperCase() || '?'}
-            </div>
+  return (
+    <div className="mx-auto flex h-dvh w-full max-w-md flex-col overflow-hidden bg-mist">
+      {/* Status header */}
+      <header className="shrink-0 rounded-b-[28px] bg-ink px-5 pb-5 pt-[max(1rem,env(safe-area-inset-top))] text-white">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-sm font-bold text-white/80">TRICYCALL.SF</span>
+          {hasDriver && driverLocation && (
+            <span
+              className={`inline-flex items-center gap-1.5 text-xs font-semibold ${
+                isDriverLocationStale ? 'text-[#ffb703]' : 'text-white/80'
+              }`}
+            >
+              <span
+                className={`h-2 w-2 rounded-full ${
+                  isDriverLocationStale ? 'bg-[#ffb703]' : 'bg-live'
+                }`}
+              />
+              {isDriverLocationStale ? 'Last known location' : 'Live'}
+            </span>
           )}
-          <div className="flex-1">
-            <p className="text-xs text-gray-500">Your Driver</p>
-            <p className="font-semibold text-gray-800">{driverContact.full_name}</p>
-            <p className="text-sm text-gray-600">{driverContact.phone}</p>
-            {driverContact.plate_number && (
-              <p className="text-sm text-gray-500">Plate: {driverContact.plate_number}</p>
-            )}
-            <p className="text-sm text-yellow-500 mt-1">
-              {driverContact.rating_count > 0
-                ? `★ ${Number(driverContact.avg_rating).toFixed(1)} (${driverContact.rating_count} ratings)`
-                : 'New driver — no ratings yet'}
+        </div>
+
+        <div className="mt-4 flex items-center gap-3">
+          {trip.status === 'requested' && (
+            <span className="relative flex h-3.5 w-3.5 shrink-0">
+              <span className="absolute inline-flex h-full w-full rounded-full bg-signal opacity-60 motion-safe:animate-ping" />
+              <span className="relative inline-flex h-3.5 w-3.5 rounded-full bg-signal" />
+            </span>
+          )}
+          <h1 className="text-2xl font-extrabold leading-tight">{message.title}</h1>
+        </div>
+        <p className="mt-1 text-sm text-white/70">{message.sub}</p>
+
+        <div className="mt-4 flex items-end justify-between gap-3">
+          <div>
+            <p className="text-xs text-white/60">Fare</p>
+            <p className="text-3xl font-extrabold tabular-nums">
+              ₱{Number(trip.fare).toFixed(2)}
             </p>
           </div>
-          <a
-            href={`tel:${driverContact.phone}`}
-            className="bg-green-600 text-white rounded-full px-4 py-2 text-sm font-semibold flex-shrink-0"
-          >
-            Call
-          </a>
+          <div className="text-right">
+            <p className="text-xs text-white/60">Distance</p>
+            <p className="text-lg font-bold tabular-nums">
+              {Number(trip.distance_km).toFixed(2)} km
+            </p>
+          </div>
         </div>
-      )}
 
-      {driverContactError && !driverContact && !['requested', 'completed', 'cancelled'].includes(trip?.status) && (
-        <p className="text-center text-xs text-red-500 px-4 mb-2">
-          Could not load driver contact: {driverContactError}
-        </p>
-      )}
+        {trip.status === 'requested' && showNoDriversHint && (
+          <p className="mt-3 rounded-lg bg-[#ffb703]/15 px-3 py-2 text-xs leading-snug text-[#ffd77a]">
+            No drivers have accepted yet. You can keep waiting, or cancel and try again later.
+          </p>
+        )}
+      </header>
 
-      {showMap && (
-        <div
-          className="rounded-2xl overflow-hidden"
-          style={{
-            height: '350px',
-            width: '100%',
-            position: 'relative',
-          }}
-        >
-          <MapView
-            currentLocation={{
-              lat: trip.pickup_lat,
-              lng: trip.pickup_lng,
-            }}
-            destination={{
-              lat: trip.dropoff_lat,
-              lng: trip.dropoff_lng,
-            }}
-            driverLocation={driverLocation}
-            driverLocationUpdatedAt={driverLocationUpdatedAt}
-            availableDrivers={availableDrivers}
-            showCurrentMarker={trip.status !== 'ongoing'}
-            routeTarget={
-              trip.status === 'ongoing'
-                ? { lat: trip.dropoff_lat, lng: trip.dropoff_lng }
-                : { lat: trip.pickup_lat, lng: trip.pickup_lng }
-            }
-          />
+      {showMap ? (
+        <div className="relative min-h-0 flex-1 [&_.leaflet-bottom]:mb-6">
+          <div className="absolute inset-0">
+            <MapView
+              currentLocation={{
+                lat: trip.pickup_lat,
+                lng: trip.pickup_lng,
+              }}
+              destination={{
+                lat: trip.dropoff_lat,
+                lng: trip.dropoff_lng,
+              }}
+              driverLocation={driverLocation}
+              driverLocationUpdatedAt={driverLocationUpdatedAt}
+              availableDrivers={availableDrivers}
+              showCurrentMarker={trip.status !== 'ongoing'}
+              routeTarget={
+                trip.status === 'ongoing'
+                  ? { lat: trip.dropoff_lat, lng: trip.dropoff_lng }
+                  : { lat: trip.pickup_lat, lng: trip.pickup_lng }
+              }
+            />
+          </div>
         </div>
+      ) : (
+        <main className="min-h-0 flex-1 overflow-y-auto px-4 pt-5">
+          {trip.status === 'completed' && !existingRating && !submitted && (
+            <div className="rounded-2xl border border-line bg-white p-5">
+              <p className="text-lg font-extrabold text-ink">Rate your driver</p>
+              <p className="mt-0.5 text-sm text-mute">How was your ride?</p>
+
+              <div className="mt-4 flex justify-center gap-1">
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <button
+                    key={star}
+                    onClick={() => setRating(star)}
+                    aria-label={`${star} ${star === 1 ? 'star' : 'stars'}`}
+                    className={`flex h-12 w-12 items-center justify-center text-4xl ${
+                      star <= rating ? 'text-[#ffb703]' : 'text-line'
+                    }`}
+                  >
+                    ★
+                  </button>
+                ))}
+              </div>
+
+              <textarea
+                placeholder="Leave a comment (optional)"
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                className="mt-4 w-full rounded-xl border border-line px-4 py-3 text-base text-ink placeholder:text-mute/60 focus:border-ink focus:outline-none focus:ring-2 focus:ring-ink/15"
+                rows={3}
+              />
+
+              <button
+                onClick={submitRating}
+                disabled={rating === 0}
+                className="mt-3 h-14 w-full rounded-2xl bg-signal text-base font-bold text-ink active:bg-signal-dark disabled:opacity-40"
+              >
+                Submit rating
+              </button>
+            </div>
+          )}
+
+          {(submitted || existingRating) && (
+            <div className="rounded-2xl border border-line bg-white p-5 text-center">
+              <p className="font-bold text-ink">Thanks for rating your trip!</p>
+            </div>
+          )}
+
+          {trip.status === 'cancelled' && (
+            <div className="rounded-2xl border border-dashed border-line px-5 py-8 text-center">
+              <p className="font-bold text-ink">This trip was cancelled</p>
+              <p className="mt-1 text-sm text-mute">You can book another ride any time.</p>
+            </div>
+          )}
+        </main>
       )}
 
-      <div className="flex-1 flex items-center justify-center px-4 py-6">
-        <div className="text-center space-y-4 w-full max-w-sm">
-          {trip?.status === 'completed' &&
-            !existingRating &&
-            !submitted && (
-              <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
-                <p className="font-semibold text-gray-700">
-                  Rate your driver
-                </p>
+      {/* Bottom sheet */}
+      <div
+        className="relative shrink-0 rounded-t-[28px] bg-white px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-5 shadow-[0_-8px_24px_rgba(23,33,43,0.12)]"
+        style={{ zIndex: 1100, marginTop: showMap ? '-1.5rem' : 0 }}
+      >
+        {trip.status === 'requested' && (
+          <p className="flex items-center gap-2 text-sm font-semibold text-mute">
+            <span
+              className={`h-2.5 w-2.5 rounded-full ${
+                availableDrivers.length > 0 ? 'bg-live' : 'bg-line'
+              }`}
+            />
+            {availableDrivers.length > 0
+              ? `${availableDrivers.length} ${
+                  availableDrivers.length === 1 ? 'tricycle' : 'tricycles'
+                } online`
+              : 'No tricycles online right now'}
+          </p>
+        )}
 
-                <div className="flex justify-center gap-2">
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <button
-                      key={star}
-                      onClick={() => setRating(star)}
-                      className={`text-3xl ${
-                        star <= rating
-                          ? 'text-yellow-400'
-                          : 'text-gray-300'
-                      }`}
-                    >
-                      ★
-                    </button>
-                  ))}
-                </div>
-
-                <textarea
-                  placeholder="Leave a comment (optional)"
-                  value={comment}
-                  onChange={(e) => setComment(e.target.value)}
-                  className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm"
-                  rows={3}
-                />
-
-                <button
-                  onClick={submitRating}
-                  disabled={rating === 0}
-                  className="w-full bg-green-600 text-white rounded-xl py-3 font-semibold disabled:opacity-40"
-                >
-                  Submit Rating
-                </button>
+        {hasDriver && driverContact && (
+          <div className="flex items-center gap-3">
+            {driverContact.avatar_url ? (
+              <img
+                src={driverContact.avatar_url}
+                alt={driverContact.full_name}
+                className="h-14 w-14 shrink-0 rounded-full object-cover"
+              />
+            ) : (
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-mist text-lg font-bold text-ink">
+                {driverContact.full_name?.charAt(0).toUpperCase() || '?'}
               </div>
             )}
 
-          {(submitted || existingRating) && (
-            <p className="text-green-600 font-semibold">
-              Thanks for rating your trip!
-            </p>
-          )}
+            <div className="min-w-0 flex-1">
+              <p className="truncate font-bold text-ink">{driverContact.full_name}</p>
+              <p className="text-sm text-mute">
+                {driverContact.rating_count > 0 ? (
+                  <>
+                    <span className="text-[#ffb703]">★</span>{' '}
+                    {Number(driverContact.avg_rating).toFixed(1)} ({driverContact.rating_count}{' '}
+                    {driverContact.rating_count === 1 ? 'rating' : 'ratings'})
+                  </>
+                ) : (
+                  'New driver, no ratings yet'
+                )}
+              </p>
+              <p className="text-sm text-mute">{driverContact.phone}</p>
+            </div>
 
-          {trip?.status === 'completed' && (
-            <button
-              onClick={() => router.push('/book')}
-              className="w-full bg-green-600 text-white rounded-xl py-3 font-semibold hover:bg-green-700 transition"
+            <a
+              href={`tel:${driverContact.phone}`}
+              className="flex h-11 shrink-0 items-center gap-2 rounded-xl bg-ink px-4 text-sm font-bold text-white active:bg-ink/90"
             >
-              Back to Home
-            </button>
-          )}
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M22 16.9v3a2 2 0 01-2.2 2 19.8 19.8 0 01-8.6-3.1 19.5 19.5 0 01-6-6A19.8 19.8 0 012.1 4.2 2 2 0 014.1 2h3a2 2 0 012 1.7c.1 1 .4 1.9.7 2.8a2 2 0 01-.5 2.1L8 9.9a16 16 0 006 6l1.3-1.3a2 2 0 012.1-.4c.9.3 1.8.6 2.8.7a2 2 0 011.7 2z" />
+              </svg>
+              Call
+            </a>
+          </div>
+        )}
 
-          {trip && ['requested', 'accepted', 'arrived', 'ongoing'].includes(trip.status) && (
-            <button
-              onClick={cancelTrip}
-              className="w-full bg-red-500 text-white rounded-xl py-3 font-semibold hover:bg-red-600 transition"
-            >
-              {trip.status === 'requested' ? 'Cancel Ride Request' : 'Cancel Trip'}
-            </button>
-          )}
+        {hasDriver && driverContact?.plate_number && (
+          <div className="mt-3 flex items-center justify-between gap-3 rounded-xl bg-mist px-3 py-2">
+            <span className="text-xs text-mute">Plate number</span>
+            <span className="rounded-md border-2 border-ink bg-white px-2.5 py-0.5 font-mono text-base font-black tracking-[0.12em] text-ink">
+              {driverContact.plate_number}
+            </span>
+          </div>
+        )}
 
+        {hasDriver && driverContactError && !driverContact && (
+          <p className="text-sm text-red-600">
+            Could not load driver contact: {driverContactError}
+          </p>
+        )}
+
+        {isActive && (
           <button
-            onClick={() => router.push('/history')}
-            className="text-green-600 text-sm font-medium"
+            onClick={cancelTrip}
+            className={`h-12 w-full rounded-2xl border border-red-200 font-semibold text-red-600 active:bg-red-50 ${
+              trip.status === 'requested' ? 'mt-3' : 'mt-4'
+            }`}
           >
-            View Trip History
+            {trip.status === 'requested' ? 'Cancel ride request' : 'Cancel trip'}
           </button>
-        </div>
+        )}
+
+        {!isActive && (
+          <button
+            onClick={() => router.push('/book')}
+            className="h-14 w-full rounded-2xl bg-signal text-base font-bold text-ink active:bg-signal-dark"
+          >
+            Back to home
+          </button>
+        )}
+
+        <button
+          onClick={() => router.push('/history')}
+          className="mt-2 h-10 w-full rounded-xl text-sm font-semibold text-mute active:bg-mist"
+        >
+          View trip history
+        </button>
       </div>
     </div>
   )
