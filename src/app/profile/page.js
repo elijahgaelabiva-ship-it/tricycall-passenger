@@ -1,8 +1,11 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import PageHeader from '@/components/PageHeader'
+import LiveCamera from '@/components/LiveCamera'
+import { inputClass, labelClass } from '@/components/AuthShell'
 
 export default function PassengerProfilePage() {
   const router = useRouter()
@@ -13,16 +16,12 @@ export default function PassengerProfilePage() {
   const [saveError, setSaveError] = useState('')
   const [saveSuccess, setSaveSuccess] = useState(false)
 
-  // Live camera photo retake — camera only, no gallery picker, same policy
+  // Live camera photo retake (camera only, no gallery picker), same policy
   // as registration, so a passenger can't swap in an unrelated photo.
-  const [cameraOpen, setCameraOpen] = useState(false)
-  const [cameraError, setCameraError] = useState('')
+  const [showCamera, setShowCamera] = useState(false)
   const [selfieBlob, setSelfieBlob] = useState(null)
   const [selfiePreviewUrl, setSelfiePreviewUrl] = useState(null)
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
-  const videoRef = useRef(null)
-  const canvasRef = useRef(null)
-  const streamRef = useRef(null)
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -48,71 +47,16 @@ export default function PassengerProfilePage() {
   }, [router])
 
   useEffect(() => {
-    return () => stopCamera()
-  }, [])
-
-  const stopCamera = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop())
-      streamRef.current = null
+    return () => {
+      if (selfiePreviewUrl) URL.revokeObjectURL(selfiePreviewUrl)
     }
-    setCameraOpen(false)
-  }
+  }, [selfiePreviewUrl])
 
-  const openCamera = async () => {
-    setCameraError('')
-
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setCameraError('Your browser does not support camera access.')
-      return
-    }
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user' },
-        audio: false,
-      })
-
-      streamRef.current = stream
-      setCameraOpen(true)
-
-      requestAnimationFrame(() => {
-        if (videoRef.current) videoRef.current.srcObject = stream
-      })
-    } catch {
-      setCameraError('Could not access camera. Please allow camera permission and try again.')
-    }
-  }
-
-  const captureSelfie = () => {
-    const video = videoRef.current
-    const canvas = canvasRef.current
-    if (!video || !canvas) return
-
-    canvas.width = video.videoWidth
-    canvas.height = video.videoHeight
-    const ctx = canvas.getContext('2d')
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-
-    canvas.toBlob(
-      (blob) => {
-        if (blob) {
-          setSelfieBlob(blob)
-          setSelfiePreviewUrl(URL.createObjectURL(blob))
-        }
-      },
-      'image/jpeg',
-      0.9
-    )
-
-    stopCamera()
-  }
-
-  const retakeSelfie = () => {
-    setSelfieBlob(null)
-    if (selfiePreviewUrl) URL.revokeObjectURL(selfiePreviewUrl)
-    setSelfiePreviewUrl(null)
-    openCamera()
+  const handleSelfie = (blob) => {
+    setSelfieBlob(blob)
+    setSelfiePreviewUrl(URL.createObjectURL(blob))
+    setShowCamera(false)
+    setSaveSuccess(false)
   }
 
   const handleSave = async () => {
@@ -164,123 +108,120 @@ export default function PassengerProfilePage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-white">
-        <p className="text-gray-500">Loading...</p>
+      <div className="min-h-screen bg-mist" aria-busy="true">
+        <div className="mx-auto w-full max-w-md">
+          <div className="h-72 rounded-b-[28px] bg-ink" />
+          <div className="mx-4 mt-4 space-y-3 motion-safe:animate-pulse">
+            <div className="h-20 rounded-2xl bg-white" />
+            <div className="h-28 rounded-2xl bg-white" />
+          </div>
+        </div>
       </div>
     )
   }
 
+  const shownPhoto = selfiePreviewUrl || profile?.avatar_url
+
   return (
-    <div className="min-h-screen bg-white px-4 py-8 flex flex-col items-center">
-      <button
-        onClick={() => router.push('/book')}
-        className="self-start text-sm text-gray-500 underline mb-4"
-      >
-        ← Back
-      </button>
+    <div className="min-h-screen bg-mist">
+      {showCamera && (
+        <LiveCamera onCapture={handleSelfie} onCancel={() => setShowCamera(false)} />
+      )}
 
-      <h1 className="text-2xl font-bold text-green-600 mb-6">Edit Profile</h1>
+      <div className="mx-auto w-full max-w-md pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+        <PageHeader title="Edit profile" backLabel="Back">
+          <div className="mt-4 flex flex-col items-center text-center">
+            {shownPhoto ? (
+              <img
+                src={shownPhoto}
+                alt="Your photo"
+                className="h-28 w-28 rounded-full object-cover ring-2 ring-white/30 ring-offset-2 ring-offset-ink"
+              />
+            ) : (
+              <div className="flex h-28 w-28 items-center justify-center rounded-full bg-white/10 text-4xl font-bold">
+                {profile?.full_name?.charAt(0).toUpperCase() || '?'}
+              </div>
+            )}
 
-      <div className="w-full max-w-sm space-y-5">
-        <div className="flex flex-col items-center">
-          {!cameraOpen && !selfiePreviewUrl && (
-            <>
-              {profile?.avatar_url ? (
-                <img
-                  src={profile.avatar_url}
-                  alt={profile.full_name}
-                  className="w-28 h-28 rounded-full object-cover"
-                />
-              ) : (
-                <div className="w-28 h-28 rounded-full bg-green-100 flex items-center justify-center text-green-700 font-bold text-3xl">
-                  {profile?.full_name?.charAt(0).toUpperCase() || '?'}
-                </div>
-              )}
-              <button
-                onClick={openCamera}
-                className="mt-3 text-sm text-green-600 font-semibold underline"
+            <button
+              type="button"
+              onClick={() => setShowCamera(true)}
+              className="mt-4 inline-flex h-11 items-center gap-2 rounded-xl bg-white/10 px-5 text-sm font-semibold active:bg-white/20"
+            >
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
               >
-                Retake Photo
-              </button>
-            </>
-          )}
+                <path d="M4 8h3l2-3h6l2 3h3v11H4z" />
+                <circle cx="12" cy="13" r="3.5" />
+              </svg>
+              {selfieBlob ? 'Retake photo' : 'Take new photo'}
+            </button>
 
-          {cameraError && (
-            <p className="text-red-600 text-xs text-center bg-red-50 p-2 rounded mt-2">
-              {cameraError}
+            {selfieBlob && (
+              <p className="mt-2 text-xs text-white/70">Tap Save changes to keep this photo.</p>
+            )}
+          </div>
+        </PageHeader>
+
+        <main className="mx-4 mt-4 space-y-4 rounded-2xl border border-line bg-white p-5">
+          <div>
+            <label htmlFor="name" className={labelClass}>
+              Full name
+            </label>
+            <input
+              id="name"
+              type="text"
+              value={fullName}
+              onChange={(e) => {
+                setFullName(e.target.value)
+                setSaveSuccess(false)
+              }}
+              className={inputClass}
+            />
+          </div>
+
+          <div>
+            <label htmlFor="phone" className={labelClass}>
+              Phone number
+            </label>
+            <input
+              id="phone"
+              type="text"
+              value={profile?.phone || ''}
+              disabled
+              className="mt-1.5 h-12 w-full rounded-xl border border-line bg-mist px-4 text-base text-mute"
+            />
+            <p className="mt-1.5 text-xs leading-relaxed text-mute">
+              Your phone number is tied to your login, so it can't be changed here. Contact
+              support if it needs updating.
+            </p>
+          </div>
+
+          {saveError && (
+            <p className="rounded-xl bg-red-50 px-3 py-2.5 text-sm text-red-700">{saveError}</p>
+          )}
+          {saveSuccess && (
+            <p className="rounded-xl bg-[#e3f4ea] px-3 py-2.5 text-sm font-semibold text-[#1f7a48]">
+              Profile updated.
             </p>
           )}
 
-          {cameraOpen && (
-            <div className="w-full space-y-2">
-              <video
-                ref={videoRef}
-                autoPlay
-                playsInline
-                muted
-                className="w-full rounded-xl bg-black aspect-square object-cover"
-              />
-              <button
-                onClick={captureSelfie}
-                className="w-full bg-green-600 text-white rounded-xl py-2 font-semibold hover:bg-green-700 transition"
-              >
-                Capture Photo
-              </button>
-            </div>
-          )}
-
-          {!cameraOpen && selfiePreviewUrl && (
-            <div className="w-full space-y-2">
-              <img
-                src={selfiePreviewUrl}
-                alt="New photo preview"
-                className="w-28 h-28 rounded-full object-cover mx-auto"
-              />
-              <button
-                onClick={retakeSelfie}
-                className="w-full bg-gray-200 text-gray-700 rounded-xl py-2 font-semibold hover:bg-gray-300 transition"
-              >
-                Retake
-              </button>
-            </div>
-          )}
-
-          <canvas ref={canvasRef} className="hidden" />
-        </div>
-
-        <div>
-          <label className="text-sm font-medium text-gray-700">Name</label>
-          <input
-            type="text"
-            value={fullName}
-            onChange={(e) => setFullName(e.target.value)}
-            className="w-full border border-gray-300 rounded-xl px-4 py-3 mt-1 focus:outline-none focus:ring-2 focus:ring-green-500"
-          />
-        </div>
-
-        <div>
-          <label className="text-sm font-medium text-gray-700">Phone Number</label>
-          <input
-            type="text"
-            value={profile?.phone || ''}
-            disabled
-            className="w-full border border-gray-200 bg-gray-50 text-gray-500 rounded-xl px-4 py-3 mt-1"
-          />
-          <p className="text-xs text-gray-400 mt-1">
-            Phone number can't be changed here since it's tied to your login. Contact support if it needs updating.
-          </p>
-        </div>
-
-        {saveError && <p className="text-red-600 text-sm">{saveError}</p>}
-        {saveSuccess && <p className="text-green-600 text-sm">Profile updated.</p>}
-
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="w-full bg-green-600 text-white rounded-xl py-3 font-semibold hover:bg-green-700 transition disabled:opacity-50"
-        >
-          {uploadingPhoto ? 'Uploading photo...' : saving ? 'Saving...' : 'Save Changes'}
-        </button>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="h-14 w-full rounded-2xl bg-signal text-base font-bold text-ink active:bg-signal-dark disabled:opacity-50"
+          >
+            {uploadingPhoto ? 'Uploading photo...' : saving ? 'Saving...' : 'Save changes'}
+          </button>
+        </main>
       </div>
     </div>
   )
