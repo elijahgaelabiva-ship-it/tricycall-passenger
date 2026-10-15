@@ -295,6 +295,7 @@ export default function BookPage() {
             onDestinationSelect={handleDestinationSelect}
             availableDrivers={availableDrivers}
             searchInset={72}
+            onLocationUpdate={setCurrentLocation}
           />
         ) : (
           <div className="flex h-full items-center justify-center">
