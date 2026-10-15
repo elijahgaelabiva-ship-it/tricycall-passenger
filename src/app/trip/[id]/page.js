@@ -41,6 +41,14 @@ export default function TripPage() {
   const [comment, setComment] = useState('')
   const [submitted, setSubmitted] = useState(false)
   const [existingRating, setExistingRating] = useState(null)
+
+  // "Report a problem" during an ongoing trip
+  const [reportOpen, setReportOpen] = useState(false)
+  const [reportCategory, setReportCategory] = useState('')
+  const [reportDetails, setReportDetails] = useState('')
+  const [reportSending, setReportSending] = useState(false)
+  const [reportSent, setReportSent] = useState(false)
+  const [reportError, setReportError] = useState('')
   const [driverLocationUpdatedAt, setDriverLocationUpdatedAt] = useState(null)
   const [isDriverLocationStale, setIsDriverLocationStale] = useState(false)
   const tripStatusRef = useRef(null)
@@ -229,6 +237,40 @@ useEffect(() => {
     cancelled: { title: 'Trip cancelled', sub: 'This ride was cancelled.' },
   }
 
+  const REPORT_CATEGORIES = [
+    'I feel unsafe',
+    'The driver is going the wrong way',
+    'The driver is not following my route',
+    'Something else',
+  ]
+
+  const submitReport = async () => {
+    if (!reportCategory) return
+    setReportSending(true)
+    setReportError('')
+
+    const { error } = await supabase.from('trip_reports').insert({
+      trip_id: id,
+      passenger_id: trip.passenger_id,
+      category: reportCategory,
+      details: reportDetails.trim() || null,
+    })
+
+    setReportSending(false)
+
+    if (error) {
+      setReportError('Could not send your report: ' + error.message)
+      return
+    }
+    setReportSent(true)
+  }
+
+  const closeReport = () => {
+    setReportOpen(false)
+    setReportError('')
+    // Keep the "sent" state so the passenger can't spam duplicate reports by reopening
+  }
+
   const submitRating = async () => {
     const {
       data: { user },
@@ -249,22 +291,31 @@ useEffect(() => {
 
   const ACTIVE_STATUSES = ['requested', 'accepted', 'arrived', 'ongoing']
 
+  // Passengers can cancel until the trip starts. Once it is ongoing, only the
+  // driver can end it.
   const cancelTrip = async () => {
-    if (['accepted', 'arrived', 'ongoing'].includes(trip.status)) {
+    if (['accepted', 'arrived'].includes(trip.status)) {
       const confirmed = window.confirm(
         'A driver has already accepted this trip. Are you sure you want to cancel? (e.g. if the driver seems unreachable)'
       )
       if (!confirmed) return
     }
 
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('trips')
       .update({ status: 'cancelled' })
       .eq('id', id)
-      .in('status', ACTIVE_STATUSES)
+      .in('status', ['requested', 'accepted', 'arrived'])
+      .select('id')
 
     if (error) {
       alert('Could not cancel: ' + error.message)
+      return
+    }
+
+    // Nothing changed: the trip started in the meantime, so it can't be cancelled
+    if (!data || data.length === 0) {
+      alert("This trip has already started, so it can't be cancelled.")
       return
     }
 
@@ -511,7 +562,21 @@ const isActive = trip && ['requested', 'accepted', 'arrived', 'ongoing'].include
           </p>
         )}
 
-        {isActive && (
+        {isActive && trip.status === 'ongoing' && (
+          <>
+            <p className="text-center text-xs text-mute">
+              Your trip is in progress. Cancelling isn't available once the trip has started.
+            </p>
+            <button
+              onClick={() => setReportOpen(true)}
+              className="mt-3 h-12 w-full rounded-2xl border border-line font-semibold text-ink active:bg-mist"
+            >
+              {reportSent ? 'Report sent' : 'Report a problem'}
+            </button>
+          </>
+        )}
+
+        {isActive && trip.status !== 'ongoing' && (
           <button
             onClick={cancelTrip}
             className={`h-12 w-full rounded-2xl border border-red-200 font-semibold text-red-600 active:bg-red-50 ${
@@ -538,6 +603,98 @@ const isActive = trip && ['requested', 'accepted', 'arrived', 'ongoing'].include
           View trip history
         </button>
       </div>
+
+      {/* Report a problem */}
+      {reportOpen && (
+        <div className="fixed inset-0 flex items-end" style={{ zIndex: 9999 }}>
+          <div className="absolute inset-0 bg-ink/50" onClick={closeReport} />
+
+          <div className="relative max-h-[90dvh] w-full overflow-y-auto rounded-t-[28px] bg-white px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-5">
+            <div className="flex items-start justify-between gap-3">
+              <h2 className="text-xl font-extrabold text-ink">Report a problem</h2>
+              <button
+                onClick={closeReport}
+                className="-mr-2 -mt-1 flex h-10 w-10 items-center justify-center rounded-full text-mute active:bg-mist"
+                aria-label="Close"
+              >
+                <svg
+                  width="22"
+                  height="22"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  aria-hidden="true"
+                >
+                  <path d="M6 6l12 12M18 6L6 18" />
+                </svg>
+              </button>
+            </div>
+
+            <a
+              href="tel:911"
+              className="mt-3 flex items-center justify-between rounded-xl bg-red-50 px-4 py-3 text-red-700 active:bg-red-100"
+            >
+              <span className="text-sm font-semibold">In an emergency, call 911</span>
+              <span className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-bold text-white">
+                Call
+              </span>
+            </a>
+
+            {reportSent ? (
+              <div className="mt-5 rounded-2xl bg-[#e3f4ea] px-4 py-5 text-center">
+                <p className="font-bold text-[#1f7a48]">Report sent</p>
+                <p className="mt-1 text-sm text-[#1f7a48]/80">
+                  Thanks for letting us know. The TRICYCALL.SF team will look into it.
+                </p>
+              </div>
+            ) : (
+              <>
+                <p className="mt-5 text-sm font-semibold text-ink">What's going on?</p>
+                <div className="mt-2 space-y-2">
+                  {REPORT_CATEGORIES.map((category) => (
+                    <button
+                      key={category}
+                      onClick={() => setReportCategory(category)}
+                      className={`flex min-h-12 w-full items-center rounded-xl border px-4 py-2 text-left text-sm font-semibold ${
+                        reportCategory === category
+                          ? 'border-ink bg-mist text-ink'
+                          : 'border-line text-ink'
+                      }`}
+                      aria-pressed={reportCategory === category}
+                    >
+                      {category}
+                    </button>
+                  ))}
+                </div>
+
+                <textarea
+                  placeholder="Add details (optional)"
+                  value={reportDetails}
+                  onChange={(e) => setReportDetails(e.target.value)}
+                  rows={3}
+                  className="mt-3 w-full rounded-xl border border-line px-4 py-3 text-base text-ink placeholder:text-mute/60 focus:border-ink focus:outline-none focus:ring-2 focus:ring-ink/15"
+                />
+
+                {reportError && (
+                  <p className="mt-3 rounded-xl bg-red-50 px-3 py-2.5 text-sm text-red-700">
+                    {reportError}
+                  </p>
+                )}
+
+                <button
+                  onClick={submitReport}
+                  disabled={!reportCategory || reportSending}
+                  className="mt-3 h-14 w-full rounded-2xl bg-signal text-base font-bold text-ink active:bg-signal-dark disabled:opacity-40"
+                >
+                  {reportSending ? 'Sending...' : 'Send report'}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
