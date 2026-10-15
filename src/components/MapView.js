@@ -331,30 +331,97 @@ function FollowMode({ target, active, zoom = 17 }) {
 
   return (
     <button
+      type="button"
       onClick={(e) => {
         e.stopPropagation()
         setFollowing(true)
       }}
-      style={{
-        position: 'absolute',
-        bottom: 90,
-        right: 12,
-        zIndex: 1000,
-        background: 'white',
-        border: 'none',
-        borderRadius: '50%',
-        width: 46,
-        height: 46,
-        boxShadow: '0 2px 10px rgba(0,0,0,0.25)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        cursor: 'pointer',
-        fontSize: 20,
-      }}
-      aria-label="Recenter map"
+      className={mapButtonClass}
+      style={{ position: 'absolute', right: 10, bottom: 108, zIndex: 1000 }}
+      aria-label="Recenter on driver"
     >
-      🎯
+      <LocateIcon />
+    </button>
+  )
+}
+
+// Always-visible "my location" button for the booking stage (before a driver
+// is assigned). Gets a fresh GPS fix, flies the map there, and reports the new
+// position to the parent so the blue marker and pickup point stay accurate.
+const mapButtonClass =
+  'flex h-11 w-11 items-center justify-center rounded-full bg-white text-ink shadow-[0_2px_12px_rgba(23,33,43,0.22)] active:bg-mist disabled:opacity-60'
+
+function LocateIcon({ pulsing = false }) {
+  return (
+    <svg
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className={pulsing ? 'motion-safe:animate-pulse' : undefined}
+    >
+      <circle cx="12" cy="12" r="3.5" />
+      <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+      <circle cx="12" cy="12" r="8" />
+    </svg>
+  )
+}
+
+function LocateButton({ fallback, onLocated }) {
+  const map = useMap()
+  const ref = useRef(null)
+  const [locating, setLocating] = useState(false)
+
+  // Keep taps on the button from also counting as a tap on the map (which
+  // would drop a destination pin underneath it).
+  useEffect(() => {
+    if (ref.current) {
+      L.DomEvent.disableClickPropagation(ref.current)
+    }
+  }, [])
+
+  const recenter = () => {
+    const flyTo = (lat, lng) => map.flyTo([lat, lng], 16, { duration: 1 })
+
+    if (!navigator.geolocation) {
+      if (fallback) flyTo(fallback.lat, fallback.lng)
+      return
+    }
+
+    setLocating(true)
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const lat = position.coords.latitude
+        const lng = position.coords.longitude
+        flyTo(lat, lng)
+        if (onLocated) onLocated({ lat, lng })
+        setLocating(false)
+      },
+      () => {
+        // No fresh fix: still bring the passenger back to the last known spot
+        if (fallback) flyTo(fallback.lat, fallback.lng)
+        setLocating(false)
+      },
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 10000 }
+    )
+  }
+
+  return (
+    <button
+      ref={ref}
+      type="button"
+      onClick={recenter}
+      disabled={locating}
+      aria-label="Go to my location"
+      className={mapButtonClass}
+      style={{ position: 'absolute', right: 10, bottom: 108, zIndex: 1000 }}
+    >
+      <LocateIcon pulsing={locating} />
     </button>
   )
 }
@@ -553,6 +620,7 @@ export default function MapView({
   availableDrivers,
   showCurrentMarker = true,
   searchInset = 12,
+  onLocationUpdate,
 }) {
   // The map must render immediately rather than waiting for GPS — use the
   // San Felipe fallback center until the passenger's real location arrives,
@@ -604,6 +672,9 @@ export default function MapView({
         )}
         <RecenterOnFirstFix location={currentLocation} hasRealFix={hasRealFix} />
         <FollowMode target={driverLocation} active={Boolean(driverLocation)} />
+        {!driverLocation && (
+          <LocateButton fallback={currentLocation} onLocated={onLocationUpdate} />
+        )}
         {(() => {
           // On the booking screen there's no driver assigned yet, so fall
           // back to drawing the route from the passenger's own location to
