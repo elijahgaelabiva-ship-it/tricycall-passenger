@@ -239,6 +239,7 @@ useEffect(() => {
 
   const REPORT_CATEGORIES = [
     'I feel unsafe',
+    "The driver doesn't match the app (name, plate or photo)",
     'The driver is going the wrong way',
     'The driver is not following my route',
     'Something else',
@@ -291,10 +292,11 @@ useEffect(() => {
 
   const ACTIVE_STATUSES = ['requested', 'accepted', 'arrived', 'ongoing']
 
-  // Passengers can cancel until the trip starts. Once it is ongoing, only the
-  // driver can end it.
+  // Passengers can cancel while the request is waiting or after a driver has
+  // accepted. Once the driver has arrived (or the trip has started), the
+  // passenger can no longer cancel.
   const cancelTrip = async () => {
-    if (['accepted', 'arrived'].includes(trip.status)) {
+    if (trip.status === 'accepted') {
       const confirmed = window.confirm(
         'A driver has already accepted this trip. Are you sure you want to cancel? (e.g. if the driver seems unreachable)'
       )
@@ -305,7 +307,7 @@ useEffect(() => {
       .from('trips')
       .update({ status: 'cancelled' })
       .eq('id', id)
-      .in('status', ['requested', 'accepted', 'arrived'])
+      .in('status', ['requested', 'accepted'])
       .select('id')
 
     if (error) {
@@ -313,9 +315,9 @@ useEffect(() => {
       return
     }
 
-    // Nothing changed: the trip started in the meantime, so it can't be cancelled
+    // Nothing changed: the driver arrived (or the trip started) in the meantime
     if (!data || data.length === 0) {
-      alert("This trip has already started, so it can't be cancelled.")
+      alert("Your driver has already arrived, so this trip can't be cancelled.")
       return
     }
 
@@ -562,10 +564,10 @@ const isActive = trip && ['requested', 'accepted', 'arrived', 'ongoing'].include
           </p>
         )}
 
-        {isActive && trip.status === 'ongoing' && (
+        {['arrived', 'ongoing'].includes(trip.status) && (
           <>
             <p className="text-center text-xs text-mute">
-              Your trip is in progress. Cancelling isn't available once the trip has started.
+              Cancelling isn't available once your driver has arrived.
             </p>
             <button
               onClick={() => setReportOpen(true)}
@@ -576,7 +578,7 @@ const isActive = trip && ['requested', 'accepted', 'arrived', 'ongoing'].include
           </>
         )}
 
-        {isActive && trip.status !== 'ongoing' && (
+        {['requested', 'accepted'].includes(trip.status) && (
           <button
             onClick={cancelTrip}
             className={`h-12 w-full rounded-2xl border border-red-200 font-semibold text-red-600 active:bg-red-50 ${
@@ -631,16 +633,6 @@ const isActive = trip && ['requested', 'accepted', 'arrived', 'ongoing'].include
                 </svg>
               </button>
             </div>
-
-            <a
-              href="tel:911"
-              className="mt-3 flex items-center justify-between rounded-xl bg-red-50 px-4 py-3 text-red-700 active:bg-red-100"
-            >
-              <span className="text-sm font-semibold">In an emergency, call 911</span>
-              <span className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-bold text-white">
-                Call
-              </span>
-            </a>
 
             {reportSent ? (
               <div className="mt-5 rounded-2xl bg-[#e3f4ea] px-4 py-5 text-center">
