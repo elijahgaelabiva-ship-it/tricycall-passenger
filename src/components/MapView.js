@@ -27,7 +27,7 @@ const destinationIcon = new L.Icon({
 // San Felipe, Zambales fallback center. The map must render immediately on
 // open rather than waiting for GPS permission/fix, so this is used as the
 // initial view until the passenger's real location arrives.
-const SAN_FELIPE_CENTER = { lat: 15.186, lng: 120.141 }
+const SAN_FELIPE_CENTER = { lat: 15.06, lng: 120.0702 }
 
 // A driver location is considered stale (last-known rather than live) if we
 // haven't received an update in this long.
@@ -442,11 +442,129 @@ function FlyToLocation({ location }) {
 
   return null
 }
+function normalize(s) {
+  return s
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+}
 
+// "Where to?" search box. Only suggests places inside San Felipe, Zambales.
+function DestinationSearchBox({ onSelect, inset = 12 }) {
+  const [query, setQuery] = useState('')
+  const [open, setOpen] = useState(false)
+
+  const tokens = normalize(query).split(/\s+/).filter(Boolean)
+  const suggestions =
+    query.trim().length < 2
+      ? []
+      : SAN_FELIPE_PLACES.filter((p) => {
+          const hay = normalize([p.name, ...(p.keywords || [])].join(' '))
+          return tokens.every((t) => hay.includes(t))
+        }).slice(0, 6)
+
+  const handleSelect = (place) => {
+    setQuery(place.name)
+    setOpen(false)
+    onSelect({ lat: place.lat, lng: place.lng }, place.name)
+  }
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        top: 'max(12px, env(safe-area-inset-top))',
+        left: inset,
+        right: 12,
+        zIndex: 1000,
+      }}
+    >
+      <div style={{ position: 'relative' }}>
+        <svg
+          width="20"
+          height="20"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="#66727d"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+          style={{ position: 'absolute', left: 16, top: 14, pointerEvents: 'none' }}
+        >
+          <circle cx="11" cy="11" r="7" />
+          <path d="M20 20l-3.5-3.5" />
+        </svg>
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value)
+            setOpen(true)
+          }}
+          placeholder="Where to? (San Felipe)"
+          style={{
+            width: '100%',
+            height: 48,
+            padding: '0 16px 0 44px',
+            borderRadius: 24,
+            border: 'none',
+            backgroundColor: '#ffffff',
+            color: '#17212b',
+            boxShadow: '0 2px 12px rgba(23,33,43,0.22)',
+            fontSize: 16,
+            fontWeight: 600,
+            textAlign: 'left',
+            outline: 'none',
+            boxSizing: 'border-box',
+          }}
+        />
+      </div>
+
+      {open && query.trim().length >= 2 && (
+        <div
+          style={{
+            background: 'white',
+            borderRadius: 16,
+            marginTop: 8,
+            boxShadow: '0 2px 12px rgba(23,33,43,0.18)',
+            overflow: 'hidden',
+            maxHeight: '45vh',
+            overflowY: 'auto',
+          }}
+        >
+          {suggestions.length > 0 ? (
+            suggestions.map((place) => (
+              <div
+                key={place.name}
+                onClick={() => handleSelect(place)}
+                style={{
+                  padding: '13px 16px',
+                  borderBottom: '1px solid #e3ecee',
+                  cursor: 'pointer',
+                  fontSize: 14,
+                  lineHeight: 1.35,
+                  color: '#17212b',
+                  textAlign: 'left',
+                }}
+              >
+                {place.name}
+              </div>
+            ))
+          ) : (
+            <div style={{ padding: '13px 16px', fontSize: 14, color: '#66727d' }}>
+              No match in San Felipe. Tap the map to pin your destination.
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+            }
 // "Where to?" search box overlaid on the map. Debounces requests to
 // Nominatim (OSM's free geocoder) as the passenger types, shows matching
 // addresses, and reports the chosen lat/lng back to the parent.
-function DestinationSearchBox({ onSelect, biasCenter, inset = 12 }) {
+function OldDestinationSearchBox({ onSelect, biasCenter, inset = 12 }) {
   const [query, setQuery] = useState('')
   const [suggestions, setSuggestions] = useState([])
   const [loading, setLoading] = useState(false)
