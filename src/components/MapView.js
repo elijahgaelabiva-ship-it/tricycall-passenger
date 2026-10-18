@@ -11,7 +11,7 @@ import {
   useMapEvents,
 } from 'react-leaflet'
 import L from 'leaflet'
-
+import { SAN_FELIPE_PLACES } from '@/data/sanFelipePlaces'
 const currentIcon = new L.Icon({
   iconUrl: '/icons/passenger-marker.png',
   iconSize: [46, 46], // true square canvas — artwork padded, not stretched or cropped
