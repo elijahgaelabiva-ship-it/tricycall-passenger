@@ -1,41 +1,32 @@
-import type { Metadata, Viewport } from "next";
-import { Plus_Jakarta_Sans, Geist_Mono } from "next/font/google";
-import "./globals.css";
-import 'leaflet/dist/leaflet.css';
-
-const appSans = Plus_Jakarta_Sans({
-  variable: "--font-app-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+import type { Metadata, Viewport } from 'next'
+import './globals.css'
 
 export const metadata: Metadata = {
-  title: "TRICYCALL.SF",
-  description: "Book a tricycle ride in San Felipe.",
-};
+  title: 'TricyCall',
+  description: 'Book a tricycle in San Felipe, Zambales',
+  manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    title: 'TricyCall',
+    statusBarStyle: 'black-translucent',
+  },
+}
 
 export const viewport: Viewport = {
-  width: "device-width",
+  width: 'device-width',
   initialScale: 1,
-  viewportFit: "cover",
-  themeColor: "#17212b",
-};
+  viewportFit: 'cover',
+  themeColor: '#17212b',
+}
 
 export default function RootLayout({
   children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+}: {
+  children: React.ReactNode
+}) {
   return (
-    <html
-      lang="en"
-      className={`${appSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col">{children}</body>
+    <html lang="en">
+      <body>{children}</body>
     </html>
-  );
+  )
 }
