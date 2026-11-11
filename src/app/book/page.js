@@ -133,6 +133,7 @@ export default function BookPage() {
       const { data } = await supabase
         .from('fare_settings')
         .select('*')
+        .order('updated_at', { ascending: false, nullsFirst: false })
         .limit(1)
         .single()
       if (data) setFareSettings(data)
@@ -148,11 +149,21 @@ export default function BookPage() {
         destination.lat,
         destination.lng
       )
-      const fare =
+      const rawFare =
         Number(fareSettings.base_fare) + km * Number(fareSettings.per_km_rate)
 
-      setDistanceKm(km)
-      setEstimatedFare(fare)
+      // Round to centavos so what the passenger sees is exactly what is
+      // stored, and so drivers' earnings never accumulate fractions of a centavo.
+      const fare = Math.round(rawFare * 100) / 100
+      const roundedKm = Math.round(km * 100) / 100
+
+      if (Number.isFinite(fare) && fare > 0) {
+        setDistanceKm(roundedKm)
+        setEstimatedFare(fare)
+      } else {
+        setDistanceKm(null)
+        setEstimatedFare(null)
+      }
     }
   }, [currentLocation, destination, fareSettings])
 
