@@ -67,6 +67,14 @@ export default function RegisterPage() {
       return
     }
 
+    // If email confirmation is on, signUp returns no session and the profile
+    // insert below would be rejected, leaving a half-created account.
+    if (!data.session) {
+      setError('Account created, but could not sign you in automatically. Please try logging in.')
+      setLoading(false)
+      return
+    }
+
     const userId = data.user.id
 
     const { error: profileError } = await supabase.from('profiles').insert({
@@ -102,7 +110,8 @@ export default function RegisterPage() {
     // than blocking the account — the photo can be retaken from the profile
     // page later. The account/profile itself was already created above.
 
-    router.push('/login')
+    // Skip the intro slideshow right after registering.
+    router.push('/login?from=intro')
   }
 
   return (
