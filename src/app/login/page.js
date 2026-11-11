@@ -19,16 +19,29 @@ export default function LoginPage() {
   // back here with ?from=intro), which prevents an infinite redirect loop
   // while still showing the intro on every fresh visit to the app.
   useEffect(() => {
-    const fromIntro =
-      typeof window !== 'undefined' &&
-      new URLSearchParams(window.location.search).get('from') === 'intro'
+    const init = async () => {
+      // Already logged in (session saved on this phone)? Skip the intro and
+      // login form and go straight to booking.
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
 
-    if (!fromIntro) {
-      window.location.href = '/intro.html'
-      return
+      if (session) {
+        router.replace('/book')
+        return
+      }
+
+      const fromIntro = new URLSearchParams(window.location.search).get('from') === 'intro'
+
+      if (!fromIntro) {
+        window.location.href = '/intro.html'
+        return
+      }
+      setCheckingIntro(false)
     }
-    setCheckingIntro(false)
-  }, [])
+
+    init()
+  }, [router])
 
   const handleLogin = async (e) => {
     e.preventDefault()
