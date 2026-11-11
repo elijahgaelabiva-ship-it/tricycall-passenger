@@ -1,217 +1,117 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useState, useEffect } from 'react'
 import dynamic from 'next/dynamic'
 import { supabase } from '@/lib/supabase'
+import { useRouter } from 'next/navigation'
 
 const MapView = dynamic(() => import('@/components/MapView'), { ssr: false })
 
-export default function TripPage() {
-  const { id } = useParams()
+// Calculates distance in km between two lat/lng points
+function getDistanceKm(lat1, lng1, lat2, lng2) {
+  const R = 6371 // Earth's radius in km
+  const dLat = ((lat2 - lat1) * Math.PI) / 180
+  const dLng = ((lng2 - lng1) * Math.PI) / 180
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2)
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+  return R * c
+}
+
+const ACTIVE_STATUSES = ['requested', 'accepted', 'arrived', 'ongoing']
+const STRIKE_LIMIT = 3
+
+export default function BookPage() {
+  const [currentLocation, setCurrentLocation] = useState(null)
+  const [destination, setDestination] = useState(null)
+  const [destinationAddress, setDestinationAddress] = useState('')
+  const [locationError, setLocationError] = useState('')
+  const [fareSettings, setFareSettings] = useState(null)
+  const [distanceKm, setDistanceKm] = useState(null)
+  const [estimatedFare, setEstimatedFare] = useState(null)
+  const [requesting, setRequesting] = useState(false)
+  const [requestError, setRequestError] = useState('')
+  const [checkingStatus, setCheckingStatus] = useState(true)
+  const [blockedMessage, setBlockedMessage] = useState('')
+  const [availableDrivers, setAvailableDrivers] = useState([])
+  const [passengerProfile, setPassengerProfile] = useState(null)
+  const [menuOpen, setMenuOpen] = useState(false)
   const router = useRouter()
 
-  const [trip, setTrip] = useState(null)
-  const [driverLocation, setDriverLocation] = useState(null)
-  const [availableDrivers, setAvailableDrivers] = useState([])
-  const [showNoDriversHint, setShowNoDriversHint] = useState(false)
-  const [driverContact, setDriverContact] = useState(null)
-  const [driverContactError, setDriverContactError] = useState('')
-
+  // Before letting the passenger book, make sure they don't already have
+  // an active trip, and that their account isn't restricted for repeated no-shows.
   useEffect(() => {
-    if (!trip || trip.status !== 'requested') {
-      setShowNoDriversHint(false)
-      return
-    }
+    const checkPassengerStatus = async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
 
-    const requestedTime = new Date(trip.requested_at).getTime()
-    const now = Date.now()
-    const elapsed = now - requestedTime
-    const remaining = 20000 - elapsed
-
-    if (remaining <= 0) {
-      setShowNoDriversHint(true)
-      return
-    }
-
-    const timer = setTimeout(() => setShowNoDriversHint(true), remaining)
-    return () => clearTimeout(timer)
-  }, [trip?.status, trip?.requested_at])
-  const [rating, setRating] = useState(0)
-  const [comment, setComment] = useState('')
-  const [submitted, setSubmitted] = useState(false)
-  const [existingRating, setExistingRating] = useState(null)
-
-  // "Report a problem" during an ongoing trip
-  const [reportOpen, setReportOpen] = useState(false)
-  const [reportCategory, setReportCategory] = useState('')
-  const [reportDetails, setReportDetails] = useState('')
-  const [reportSending, setReportSending] = useState(false)
-  const [reportSent, setReportSent] = useState(false)
-  const [reportError, setReportError] = useState('')
-  const [driverLocationUpdatedAt, setDriverLocationUpdatedAt] = useState(null)
-  const [isDriverLocationStale, setIsDriverLocationStale] = useState(false)
-  const tripStatusRef = useRef(null)
-
-  // Recheck staleness on a timer (independent of new locations arriving) so
-  // the "Last known location" hint appears even if updates fully stop.
-  useEffect(() => {
-    const STALE_AFTER_MS = 20000
-    const check = () => {
-      setIsDriverLocationStale(
-        Boolean(driverLocationUpdatedAt) && Date.now() - driverLocationUpdatedAt > STALE_AFTER_MS
-      )
-    }
-    check()
-    const interval = setInterval(check, 5000)
-    return () => clearInterval(interval)
-  }, [driverLocationUpdatedAt])
-
-useEffect(() => {
-    const loadTrip = async () => {
-      const { data } = await supabase.from('trips').select('*').eq('id', id).single()
-      setTrip(data)
-
-      const { data: ratingData } = await supabase
-        .from('ratings')
-        .select('*')
-        .eq('trip_id', id)
-        .maybeSingle()
-
-      if (ratingData) setExistingRating(ratingData)
-    }
-    loadTrip()
-
-    const tripChannel = supabase
-      .channel(`trip-${id}`)
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'trips', filter: `id=eq.${id}` },
-        (payload) => setTrip(payload.new)
-      )
-      .subscribe()
-
-    // Backup polling every 4 seconds in case realtime is delayed/missed
-    const pollInterval = setInterval(loadTrip, 4000)
-
-    return () => {
-      supabase.removeChannel(tripChannel)
-      clearInterval(pollInterval)
-    }
-  }, [id])
-
-  useEffect(() => {
-    tripStatusRef.current = trip?.status
-  }, [trip?.status])
-
-  useEffect(() => {
-    if (!trip?.driver_id) return
-
-    const loadDriverContact = async () => {
-      const { data, error } = await supabase.rpc('get_trip_driver_contact', {
-        target_trip_id: id,
-      })
-
-      if (error) {
-        setDriverContactError(error.message)
+      if (!user) {
+        router.push('/login')
         return
       }
 
-      if (data && data.length > 0) {
-        setDriverContact(data[0])
+      const { data: existingTrip } = await supabase
+        .from('trips')
+        .select('id, status')
+        .eq('passenger_id', user.id)
+        .in('status', ACTIVE_STATUSES)
+        .order('requested_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (existingTrip) {
+        router.push(`/trip/${existingTrip.id}`)
+        return
       }
-    }
 
-    loadDriverContact()
-  }, [trip?.driver_id, id])
-
-  // Continuous live driver tracking for the whole trip — this is the core
-  // "Yango-style" requirement: the passenger must keep receiving location
-  // updates without interruption for the entire active trip.
-  //
-  // Deliberately keyed only on trip?.driver_id (NOT trip?.status) so the
-  // realtime channel is created exactly once per assigned driver and never
-  // torn down/recreated as status moves accepted -> arrived -> ongoing.
-  // Previously this effect also depended on status, which meant the
-  // subscription was destroyed and rebuilt at every one of those
-  // transitions — the most likely cause of the marker appearing frozen
-  // between status changes.
-  useEffect(() => {
-    if (!trip?.driver_id) return
-    if (['completed', 'cancelled'].includes(tripStatusRef.current)) return
-
-    const loadDriverLocation = async () => {
-      const { data } = await supabase
-        .from('drivers')
-        .select('current_lat, current_lng')
-        .eq('id', trip.driver_id)
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
         .single()
 
-      if (data?.current_lat && data?.current_lng) {
-        setDriverLocation({ lat: data.current_lat, lng: data.current_lng })
-        setDriverLocationUpdatedAt(Date.now())
+      if (profile) setPassengerProfile(profile)
+
+      if (profile && profile.strike_count >= STRIKE_LIMIT) {
+        setBlockedMessage(
+          'Your account has been temporarily restricted due to repeated no-shows/cancellations. Please contact support.'
+        )
       }
+
+      setCheckingStatus(false)
     }
 
-    loadDriverLocation()
+    checkPassengerStatus()
+  }, [router])
 
-    const driverChannel = supabase
-      .channel(`driver-${trip.driver_id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'drivers',
-          filter: `id=eq.${trip.driver_id}`,
-        },
-        (payload) => {
-          if (payload.new.current_lat && payload.new.current_lng) {
-            setDriverLocation({
-              lat: payload.new.current_lat,
-              lng: payload.new.current_lng,
-            })
-            setDriverLocationUpdatedAt(Date.now())
-          }
-        }
-      )
-      .subscribe()
-
-    // Backup poll in case a realtime event is ever dropped (weak signal,
-    // brief disconnect, etc.) — mirrors the trip-status effect's existing
-    // pattern. Skips the query once the trip has actually ended.
-    const pollInterval = setInterval(() => {
-      if (!['completed', 'cancelled'].includes(tripStatusRef.current)) {
-        loadDriverLocation()
-      }
-    }, 7000)
-
-    // Android/mobile browsers commonly suspend background tabs; force a
-    // fresh fetch the moment the passenger returns to the tab instead of
-    // waiting for the next scheduled poll or realtime event.
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        loadDriverLocation()
-      }
-    }
-    document.addEventListener('visibilitychange', handleVisibility)
-
-    return () => {
-      supabase.removeChannel(driverChannel)
-      clearInterval(pollInterval)
-      document.removeEventListener('visibilitychange', handleVisibility)
-    }
-  }, [trip?.driver_id])
-
-  // While no driver has accepted yet, show every online tricycle on the
-  // map so the passenger can see activity nearby instead of a blank/text
-  // "looking for driver" screen. Stops once a driver is assigned.
   useEffect(() => {
-    if (trip?.status !== 'requested') {
-      setAvailableDrivers([])
+    if (!navigator.geolocation) {
+      setLocationError('Your browser does not support location detection.')
       return
     }
 
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setCurrentLocation({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        })
+      },
+      () => {
+        setLocationError('Could not detect your location. Please allow location access.')
+      }
+    )
+  }, [])
+
+  // Show all currently online, available tricycles on the map while the
+  // passenger is choosing where to go. Refreshes every 5 seconds so drivers
+  // moving around update live, same pattern as the driver app's ride requests.
+  useEffect(() => {
     const loadAvailableDrivers = async () => {
       const { data } = await supabase
         .from('drivers')
@@ -226,467 +126,417 @@ useEffect(() => {
     loadAvailableDrivers()
     const interval = setInterval(loadAvailableDrivers, 5000)
     return () => clearInterval(interval)
-  }, [trip?.status])
+  }, [])
 
-  const statusMessages = {
-    requested: { title: 'Looking for a driver', sub: "Hang tight, we're contacting tricycles near you." },
-    accepted: { title: 'Driver on the way', sub: 'Your driver is heading to your pickup point.' },
-    arrived: { title: 'Your driver has arrived', sub: 'Meet your driver at the pickup point.' },
-    ongoing: { title: 'Trip in progress', sub: "You're on your way." },
-    completed: { title: 'Trip completed', sub: 'Thanks for riding with TRICYCALL.SF.' },
-    cancelled: { title: 'Trip cancelled', sub: 'This ride was cancelled.' },
+  useEffect(() => {
+    const loadFareSettings = async () => {
+      const { data } = await supabase
+        .from('fare_settings')
+        .select('*')
+        .order('updated_at', { ascending: false, nullsFirst: false })
+        .limit(1)
+        .single()
+      if (data) setFareSettings(data)
+    }
+    loadFareSettings()
+  }, [])
+
+  useEffect(() => {
+    if (currentLocation && destination && fareSettings) {
+      const km = getDistanceKm(
+        currentLocation.lat,
+        currentLocation.lng,
+        destination.lat,
+        destination.lng
+      )
+      const rawFare =
+        Number(fareSettings.base_fare) + km * Number(fareSettings.per_km_rate)
+
+      // Round to centavos so what the passenger sees is exactly what is
+      // stored, and so drivers' earnings never accumulate fractions of a centavo.
+      const fare = Math.round(rawFare * 100) / 100
+      const roundedKm = Math.round(km * 100) / 100
+
+      if (Number.isFinite(fare) && fare > 0) {
+        setDistanceKm(roundedKm)
+        setEstimatedFare(fare)
+      } else {
+        setDistanceKm(null)
+        setEstimatedFare(null)
+      }
+    }
+  }, [currentLocation, destination, fareSettings])
+
+  const handleMapClick = (latlng) => {
+    setDestination(latlng)
+    setDestinationAddress('')
   }
 
-  const REPORT_CATEGORIES = [
-    'I feel unsafe',
-    "The driver doesn't match the app (name, plate or photo)",
-    'The driver is going the wrong way',
-    'The driver is not following my route',
-    'Something else',
-  ]
+  // Called when the passenger picks an address from the "Where to?" search box.
+  const handleDestinationSelect = (location, address) => {
+    setDestination(location)
+    setDestinationAddress(address)
+  }
 
-  const submitReport = async () => {
-    if (!reportCategory) return
-    setReportSending(true)
-    setReportError('')
-
-    const { error } = await supabase.from('trip_reports').insert({
-      trip_id: id,
-      passenger_id: trip.passenger_id,
-      category: reportCategory,
-      details: reportDetails.trim() || null,
-    })
-
-    setReportSending(false)
-
-    if (error) {
-      setReportError('Could not send your report: ' + error.message)
+  const handleRequestRide = async () => {
+    if (distanceKm === null || estimatedFare === null) {
+      setRequestError('Please wait, calculating fare...')
       return
     }
-    setReportSent(true)
-  }
 
-  const closeReport = () => {
-    setReportOpen(false)
-    setReportError('')
-    // Keep the "sent" state so the passenger can't spam duplicate reports by reopening
-  }
+    setRequesting(true)
+    setRequestError('')
 
-  const submitRating = async () => {
     const {
       data: { user },
     } = await supabase.auth.getUser()
 
-    const { error } = await supabase.from('ratings').insert({
-      trip_id: id,
-      passenger_id: user.id,
-      driver_id: trip.driver_id,
-      rating,
-      comment,
-    })
-
-    if (!error) {
-      setSubmitted(true)
+    if (!user) {
+      setRequestError('You must be logged in to request a ride.')
+      setRequesting(false)
+      return
     }
-  }
 
-  const ACTIVE_STATUSES = ['requested', 'accepted', 'arrived', 'ongoing']
+    // Re-check right before booking too, in case another tab already created a trip
+    const { data: existingTrip } = await supabase
+      .from('trips')
+      .select('id')
+      .eq('passenger_id', user.id)
+      .in('status', ACTIVE_STATUSES)
+      .limit(1)
+      .maybeSingle()
 
-  // Passengers can cancel while the request is waiting or after a driver has
-  // accepted. Once the driver has arrived (or the trip has started), the
-  // passenger can no longer cancel.
-  const cancelTrip = async () => {
-    if (trip.status === 'accepted') {
-      const confirmed = window.confirm(
-        'A driver has already accepted this trip. Are you sure you want to cancel? (e.g. if the driver seems unreachable)'
-      )
-      if (!confirmed) return
+    if (existingTrip) {
+      router.push(`/trip/${existingTrip.id}`)
+      return
     }
 
     const { data, error } = await supabase
       .from('trips')
-      .update({ status: 'cancelled' })
-      .eq('id', id)
-      .in('status', ['requested', 'accepted'])
-      .select('id')
+      .insert({
+        passenger_id: user.id,
+        pickup_lat: currentLocation.lat,
+        pickup_lng: currentLocation.lng,
+        dropoff_lat: destination.lat,
+        dropoff_lng: destination.lng,
+        distance_km: distanceKm,
+        fare: estimatedFare,
+        status: 'requested',
+      })
+      .select()
+      .single()
 
     if (error) {
-      alert('Could not cancel: ' + error.message)
+      setRequestError(error.message)
+      setRequesting(false)
       return
     }
 
-    // Nothing changed: the driver arrived (or the trip started) in the meantime
-    if (!data || data.length === 0) {
-      alert("Your driver has already arrived, so this trip can't be cancelled.")
-      return
-    }
-
-    router.push('/book')
+    router.push(`/trip/${data.id}`)
   }
 
-  const showMap =
-    trip &&
-    !['completed', 'cancelled'].includes(trip.status)
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+    router.push('/login')
+  }
 
-const isActive = trip && ['requested', 'accepted', 'arrived', 'ongoing'].includes(trip.status)
-  const hasDriver = trip && ['accepted', 'arrived', 'ongoing'].includes(trip.status)
-  const message = trip ? statusMessages[trip.status] : null
+  const onlineCount = availableDrivers.length
 
-  if (!trip) {
+  const menuItems = [
+    { label: 'Edit profile', href: '/profile', icon: <PersonIcon /> },
+    { label: 'Trip history', href: '/history', icon: <ClockIcon /> },
+    { label: 'Payment method', href: '/payment-method', icon: <CardIcon /> },
+  ]
+
+  if (checkingStatus) {
     return (
-      <div className="min-h-screen bg-mist" aria-busy="true">
-        <div className="mx-auto w-full max-w-md">
-          <div className="h-48 rounded-b-[28px] bg-ink" />
-          <div className="mx-4 mt-4 h-64 rounded-2xl bg-white motion-safe:animate-pulse" />
+      <div className="min-h-screen flex items-center justify-center bg-mist">
+        <p className="text-mute font-medium">Loading...</p>
+      </div>
+    )
+  }
+
+  if (blockedMessage) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-mist px-6">
+        <div className="w-full max-w-sm rounded-2xl border border-line bg-white p-6 text-center">
+          <h1 className="text-xl font-extrabold text-ink">Account restricted</h1>
+          <p className="mt-2 text-sm leading-relaxed text-mute">{blockedMessage}</p>
+          <button
+            onClick={handleLogout}
+            className="mt-5 h-11 w-full rounded-xl border border-line font-semibold text-ink"
+          >
+            Log out
+          </button>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="mx-auto flex h-dvh w-full max-w-md flex-col overflow-hidden bg-mist">
-      {/* Status header */}
-      <header className="shrink-0 rounded-b-[28px] bg-ink px-5 pb-5 pt-[max(1rem,env(safe-area-inset-top))] text-white">
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-sm font-bold text-white/80">TRICYCALL.SF</span>
-          {hasDriver && driverLocation && (
-            <span
-              className={`inline-flex items-center gap-1.5 text-xs font-semibold ${
-                isDriverLocationStale ? 'text-[#ffb703]' : 'text-white/80'
-              }`}
-            >
-              <span
-                className={`h-2 w-2 rounded-full ${
-                  isDriverLocationStale ? 'bg-[#ffb703]' : 'bg-live'
-                }`}
-              />
-              {isDriverLocationStale ? 'Last known location' : 'Live'}
-            </span>
-          )}
-        </div>
+    <div className="flex h-dvh flex-col overflow-hidden bg-mist">
+      {/* Map with floating menu button and search */}
+      <div className="relative min-h-0 flex-1 [&_.leaflet-bottom]:mb-6">
+        <button
+          onClick={() => setMenuOpen(true)}
+          className="absolute left-3 top-[max(12px,env(safe-area-inset-top))] flex h-12 w-12 items-center justify-center rounded-full bg-white text-ink shadow-[0_2px_12px_rgba(23,33,43,0.22)] active:bg-mist"
+          style={{ zIndex: 1001 }}
+          aria-label="Open menu"
+        >
+          <svg
+            width="22"
+            height="22"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M4 7h16M4 12h16M4 17h16" />
+          </svg>
+        </button>
 
-        <div className="mt-4 flex items-center gap-3">
-          {trip.status === 'requested' && (
-            <span className="relative flex h-3.5 w-3.5 shrink-0">
-              <span className="absolute inline-flex h-full w-full rounded-full bg-signal opacity-60 motion-safe:animate-ping" />
-              <span className="relative inline-flex h-3.5 w-3.5 rounded-full bg-signal" />
-            </span>
-          )}
-          <h1 className="text-2xl font-extrabold leading-tight">{message.title}</h1>
-        </div>
-        <p className="mt-1 text-sm text-white/70">{message.sub}</p>
-
-        <div className="mt-4 flex items-end justify-between gap-3">
-          <div>
-            <p className="text-xs text-white/60">Fare</p>
-            <p className="text-3xl font-extrabold tabular-nums">
-              ₱{Number(trip.fare).toFixed(2)}
-            </p>
+        {currentLocation ? (
+          <MapView
+            currentLocation={currentLocation}
+            destination={destination}
+            onMapClick={handleMapClick}
+            onDestinationSelect={handleDestinationSelect}
+            availableDrivers={availableDrivers}
+            searchInset={72}
+            onLocationUpdate={setCurrentLocation}
+          />
+        ) : (
+          <div className="flex h-full items-center justify-center">
+            <p className="font-medium text-mute">Detecting your location...</p>
           </div>
-          <div className="text-right">
-            <p className="text-xs text-white/60">Distance</p>
-            <p className="text-lg font-bold tabular-nums">
-              {Number(trip.distance_km).toFixed(2)} km
-            </p>
-          </div>
-        </div>
-
-        {trip.status === 'requested' && showNoDriversHint && (
-          <p className="mt-3 rounded-lg bg-[#ffb703]/15 px-3 py-2 text-xs leading-snug text-[#ffd77a]">
-            No drivers have accepted yet. You can keep waiting, or cancel and try again later.
-          </p>
         )}
-      </header>
+      </div>
 
-      {showMap ? (
-        <div className="relative min-h-0 flex-1 [&_.leaflet-bottom]:mb-6">
-          <div className="absolute inset-0">
-            <MapView
-              currentLocation={{
-                lat: trip.pickup_lat,
-                lng: trip.pickup_lng,
-              }}
-              destination={{
-                lat: trip.dropoff_lat,
-                lng: trip.dropoff_lng,
-              }}
-              driverLocation={driverLocation}
-              driverLocationUpdatedAt={driverLocationUpdatedAt}
-              availableDrivers={availableDrivers}
-              showCurrentMarker={trip.status !== 'ongoing'}
-              routeTarget={
-                trip.status === 'ongoing'
-                  ? { lat: trip.dropoff_lat, lng: trip.dropoff_lng }
-                  : { lat: trip.pickup_lat, lng: trip.pickup_lng }
-              }
-            />
-          </div>
-        </div>
-      ) : (
-        <main className="min-h-0 flex-1 overflow-y-auto px-4 pt-5">
-          {trip.status === 'completed' && !existingRating && !submitted && (
-            <div className="rounded-2xl border border-line bg-white p-5">
-              <p className="text-lg font-extrabold text-ink">Rate your driver</p>
-              <p className="mt-0.5 text-sm text-mute">How was your ride?</p>
-
-              <div className="mt-4 flex justify-center gap-1">
-                {[1, 2, 3, 4, 5].map((star) => (
-                  <button
-                    key={star}
-                    onClick={() => setRating(star)}
-                    aria-label={`${star} ${star === 1 ? 'star' : 'stars'}`}
-                    className={`flex h-12 w-12 items-center justify-center text-4xl ${
-                      star <= rating ? 'text-[#ffb703]' : 'text-line'
-                    }`}
-                  >
-                    ★
-                  </button>
-                ))}
-              </div>
-
-              <textarea
-                placeholder="Leave a comment (optional)"
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-                className="mt-4 w-full rounded-xl border border-line px-4 py-3 text-base text-ink placeholder:text-mute/60 focus:border-ink focus:outline-none focus:ring-2 focus:ring-ink/15"
-                rows={3}
-              />
-
-              <button
-                onClick={submitRating}
-                disabled={rating === 0}
-                className="mt-3 h-14 w-full rounded-2xl bg-signal text-base font-bold text-ink active:bg-signal-dark disabled:opacity-40"
-              >
-                Submit rating
-              </button>
-            </div>
-          )}
-
-          {(submitted || existingRating) && (
-            <div className="rounded-2xl border border-line bg-white p-5 text-center">
-              <p className="font-bold text-ink">Thanks for rating your trip!</p>
-            </div>
-          )}
-
-          {trip.status === 'cancelled' && (
-            <div className="rounded-2xl border border-dashed border-line px-5 py-8 text-center">
-              <p className="font-bold text-ink">This trip was cancelled</p>
-              <p className="mt-1 text-sm text-mute">You can book another ride any time.</p>
-            </div>
-          )}
-        </main>
-      )}
-
-      {/* Bottom sheet */}
+      {/* Booking sheet */}
       <div
-        className="relative shrink-0 rounded-t-[28px] bg-white px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-5 shadow-[0_-8px_24px_rgba(23,33,43,0.12)]"
-        style={{ zIndex: 1100, marginTop: showMap ? '-1.5rem' : 0 }}
+        className="relative -mt-6 rounded-t-[28px] bg-white px-5 pt-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-[0_-8px_24px_rgba(23,33,43,0.12)]"
+        style={{ zIndex: 1100 }}
       >
-        {trip.status === 'requested' && (
-          <p className="flex items-center gap-2 text-sm font-semibold text-mute">
-            <span
-              className={`h-2.5 w-2.5 rounded-full ${
-                availableDrivers.length > 0 ? 'bg-live' : 'bg-line'
-              }`}
-            />
-            {availableDrivers.length > 0
-              ? `${availableDrivers.length} ${
-                  availableDrivers.length === 1 ? 'tricycle' : 'tricycles'
-                } online`
-              : 'No tricycles online right now'}
+        <div className="flex items-center gap-2 text-sm font-semibold text-mute">
+          <span
+            className={`h-2.5 w-2.5 rounded-full ${onlineCount > 0 ? 'bg-live' : 'bg-line'}`}
+          />
+          {onlineCount > 0
+            ? `${onlineCount} ${onlineCount === 1 ? 'tricycle' : 'tricycles'} online`
+            : 'No tricycles online right now'}
+        </div>
+
+        {locationError && (
+          <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">
+            {locationError}
           </p>
         )}
 
-        {hasDriver && driverContact && (
-          <div className="flex items-center gap-3">
-            {driverContact.avatar_url ? (
-              <img
-                src={driverContact.avatar_url}
-                alt={driverContact.full_name}
-                className="h-14 w-14 shrink-0 rounded-full object-cover"
-              />
-            ) : (
-              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-mist text-lg font-bold text-ink">
-                {driverContact.full_name?.charAt(0).toUpperCase() || '?'}
-              </div>
-            )}
-
-            <div className="min-w-0 flex-1">
-              <p className="truncate font-bold text-ink">{driverContact.full_name}</p>
-              <p className="text-sm text-mute">
-                {driverContact.rating_count > 0 ? (
-                  <>
-                    <span className="text-[#ffb703]">★</span>{' '}
-                    {Number(driverContact.avg_rating).toFixed(1)} ({driverContact.rating_count}{' '}
-                    {driverContact.rating_count === 1 ? 'rating' : 'ratings'})
-                  </>
-                ) : (
-                  'New driver, no ratings yet'
-                )}
-              </p>
-              <p className="text-sm text-mute">{driverContact.phone}</p>
-            </div>
-
-            <a
-              href={`tel:${driverContact.phone}`}
-              className="flex h-11 shrink-0 items-center gap-2 rounded-xl bg-ink px-4 text-sm font-bold text-white active:bg-ink/90"
-            >
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <path d="M22 16.9v3a2 2 0 01-2.2 2 19.8 19.8 0 01-8.6-3.1 19.5 19.5 0 01-6-6A19.8 19.8 0 012.1 4.2 2 2 0 014.1 2h3a2 2 0 012 1.7c.1 1 .4 1.9.7 2.8a2 2 0 01-.5 2.1L8 9.9a16 16 0 006 6l1.3-1.3a2 2 0 012.1-.4c.9.3 1.8.6 2.8.7a2 2 0 011.7 2z" />
-              </svg>
-              Call
-            </a>
-          </div>
-        )}
-
-        {hasDriver && driverContact?.plate_number && (
-          <div className="mt-3 flex items-center justify-between gap-3 rounded-xl bg-mist px-3 py-2">
-            <span className="text-xs text-mute">Plate number</span>
-            <span className="rounded-md border-2 border-ink bg-white px-2.5 py-0.5 font-mono text-base font-black tracking-[0.12em] text-ink">
-              {driverContact.plate_number}
-            </span>
-          </div>
-        )}
-
-        {hasDriver && driverContactError && !driverContact && (
-          <p className="text-sm text-red-600">
-            Could not load driver contact: {driverContactError}
-          </p>
-        )}
-
-        {['arrived', 'ongoing'].includes(trip.status) && (
-          <>
-            <p className="text-center text-xs text-mute">
-              Cancelling isn't available once your driver has arrived.
+        {!destination ? (
+          <div className="mt-3">
+            <p className="text-xl font-extrabold text-ink">Where are you going?</p>
+            <p className="mt-0.5 text-sm text-mute">
+              Search above or tap the map to set your destination.
             </p>
-            <button
-              onClick={() => setReportOpen(true)}
-              className="mt-3 h-12 w-full rounded-2xl border border-line font-semibold text-ink active:bg-mist"
-            >
-              {reportSent ? 'Report sent' : 'Report a problem'}
-            </button>
-          </>
+          </div>
+        ) : (
+          <div className="mt-3">
+            <p className="flex items-start gap-2 text-sm font-semibold text-ink">
+              <PinIcon />
+              <span className="line-clamp-2 min-w-0">
+                {destinationAddress || 'Pinned location'}
+              </span>
+            </p>
+
+            {distanceKm !== null && estimatedFare !== null ? (
+              <div className="mt-3 flex items-end justify-between gap-3">
+                <div>
+                  <p className="text-xs text-mute">Estimated fare</p>
+                  <p className="text-3xl font-extrabold tabular-nums text-ink">
+                    ₱{estimatedFare.toFixed(2)}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs text-mute">Distance</p>
+                  <p className="text-lg font-bold tabular-nums text-ink">
+                    {distanceKm.toFixed(2)} km
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <p className="mt-3 text-sm text-mute">Calculating fare...</p>
+            )}
+          </div>
         )}
 
-        {['requested', 'accepted'].includes(trip.status) && (
-          <button
-            onClick={cancelTrip}
-            className={`h-12 w-full rounded-2xl border border-red-200 font-semibold text-red-600 active:bg-red-50 ${
-              trip.status === 'requested' ? 'mt-3' : 'mt-4'
-            }`}
-          >
-            {trip.status === 'requested' ? 'Cancel ride request' : 'Cancel trip'}
-          </button>
-        )}
-
-        {!isActive && (
-          <button
-            onClick={() => router.push('/book')}
-            className="h-14 w-full rounded-2xl bg-signal text-base font-bold text-ink active:bg-signal-dark"
-          >
-            Back to home
-          </button>
-        )}
+        {requestError && <p className="mt-3 text-sm text-red-600">{requestError}</p>}
 
         <button
-          onClick={() => router.push('/history')}
-          className="mt-2 h-10 w-full rounded-xl text-sm font-semibold text-mute active:bg-mist"
+          onClick={handleRequestRide}
+          disabled={!destination || requesting || estimatedFare === null}
+          className="mt-4 h-14 w-full rounded-2xl bg-signal text-base font-bold text-ink active:bg-signal-dark disabled:cursor-not-allowed disabled:opacity-40"
         >
-          View trip history
+          {requesting ? 'Requesting...' : 'Request ride'}
         </button>
       </div>
 
-      {/* Report a problem */}
-      {reportOpen && (
-        <div className="fixed inset-0 flex items-end" style={{ zIndex: 9999 }}>
-          <div className="absolute inset-0 bg-ink/50" onClick={closeReport} />
+      {/* Side menu */}
+      {menuOpen && (
+        <div className="fixed inset-0 flex" style={{ zIndex: 9999 }}>
+          <div
+            className="absolute inset-0 bg-ink/50"
+            onClick={() => setMenuOpen(false)}
+          />
 
-          <div className="relative max-h-[90dvh] w-full overflow-y-auto rounded-t-[28px] bg-white px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-5">
-            <div className="flex items-start justify-between gap-3">
-              <h2 className="text-xl font-extrabold text-ink">Report a problem</h2>
-              <button
-                onClick={closeReport}
-                className="-mr-2 -mt-1 flex h-10 w-10 items-center justify-center rounded-full text-mute active:bg-mist"
-                aria-label="Close"
-              >
-                <svg
-                  width="22"
-                  height="22"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  aria-hidden="true"
+          <aside className="menu-slide-in relative flex h-full w-80 max-w-[86%] flex-col bg-white shadow-xl">
+            <div className="rounded-br-[28px] bg-ink px-6 pb-6 pt-[max(1rem,env(safe-area-inset-top))] text-white">
+              <div className="flex justify-end">
+                <button
+                  onClick={() => setMenuOpen(false)}
+                  className="-mr-2 flex h-10 w-10 items-center justify-center rounded-full text-white/80 active:bg-white/10"
+                  aria-label="Close menu"
                 >
-                  <path d="M6 6l12 12M18 6L6 18" />
-                </svg>
-              </button>
+                  <svg
+                    width="22"
+                    height="22"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M6 6l12 12M18 6L6 18" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="flex items-center gap-4">
+                {passengerProfile?.avatar_url ? (
+                  <img
+                    src={passengerProfile.avatar_url}
+                    alt=""
+                    className="h-16 w-16 rounded-full object-cover ring-2 ring-white/30 ring-offset-2 ring-offset-ink"
+                  />
+                ) : (
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-white/10 text-2xl font-bold">
+                    {passengerProfile?.full_name?.charAt(0).toUpperCase() || '?'}
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <p className="truncate text-xl font-bold">{passengerProfile?.full_name}</p>
+                  <p className="text-sm text-white/70">{passengerProfile?.phone}</p>
+                </div>
+              </div>
             </div>
 
-            {reportSent ? (
-              <div className="mt-5 rounded-2xl bg-[#e3f4ea] px-4 py-5 text-center">
-                <p className="font-bold text-[#1f7a48]">Report sent</p>
-                <p className="mt-1 text-sm text-[#1f7a48]/80">
-                  Thanks for letting us know. The TRICYCALL.SF team will look into it.
-                </p>
-              </div>
-            ) : (
-              <>
-                <p className="mt-5 text-sm font-semibold text-ink">What's going on?</p>
-                <div className="mt-2 space-y-2">
-                  {REPORT_CATEGORIES.map((category) => (
-                    <button
-                      key={category}
-                      onClick={() => setReportCategory(category)}
-                      className={`flex min-h-12 w-full items-center rounded-xl border px-4 py-2 text-left text-sm font-semibold ${
-                        reportCategory === category
-                          ? 'border-ink bg-mist text-ink'
-                          : 'border-line text-ink'
-                      }`}
-                      aria-pressed={reportCategory === category}
-                    >
-                      {category}
-                    </button>
-                  ))}
-                </div>
-
-                <textarea
-                  placeholder="Add details (optional)"
-                  value={reportDetails}
-                  onChange={(e) => setReportDetails(e.target.value)}
-                  rows={3}
-                  className="mt-3 w-full rounded-xl border border-line px-4 py-3 text-base text-ink placeholder:text-mute/60 focus:border-ink focus:outline-none focus:ring-2 focus:ring-ink/15"
-                />
-
-                {reportError && (
-                  <p className="mt-3 rounded-xl bg-red-50 px-3 py-2.5 text-sm text-red-700">
-                    {reportError}
-                  </p>
-                )}
-
+            <nav className="mt-3 flex-1 px-3">
+              {menuItems.map((item) => (
                 <button
-                  onClick={submitReport}
-                  disabled={!reportCategory || reportSending}
-                  className="mt-3 h-14 w-full rounded-2xl bg-signal text-base font-bold text-ink active:bg-signal-dark disabled:opacity-40"
+                  key={item.href}
+                  onClick={() => router.push(item.href)}
+                  className="flex h-14 w-full items-center gap-4 rounded-xl px-3 text-left text-ink active:bg-mist"
                 >
-                  {reportSending ? 'Sending...' : 'Send report'}
+                  <span className="text-mute">{item.icon}</span>
+                  <span className="flex-1 font-semibold">{item.label}</span>
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="text-line"
+                    aria-hidden="true"
+                  >
+                    <path d="M9 6l6 6-6 6" />
+                  </svg>
                 </button>
-              </>
-            )}
-          </div>
+              ))}
+            </nav>
+
+            <div className="px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+              <button
+                onClick={handleLogout}
+                className="h-12 w-full rounded-xl border border-line font-semibold text-ink active:bg-mist"
+              >
+                Log out
+              </button>
+              <p className="mt-3 text-center text-xs text-mute">TRICYCALL.SF Passenger</p>
+            </div>
+          </aside>
         </div>
       )}
     </div>
+  )
+}
+
+function IconBase({ children }) {
+  return (
+    <svg
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {children}
+    </svg>
+  )
+}
+
+function PersonIcon() {
+  return (
+    <IconBase>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 21a8 8 0 0116 0" />
+    </IconBase>
+  )
+}
+
+function ClockIcon() {
+  return (
+    <IconBase>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </IconBase>
+  )
+}
+
+function CardIcon() {
+  return (
+    <IconBase>
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="M3 10h18M7 15h3" />
+    </IconBase>
+  )
+}
+
+function PinIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="mt-0.5 shrink-0 text-signal"
+      aria-hidden="true"
+    >
+      <path d="M12 21s-7-6.2-7-11a7 7 0 1114 0c0 4.8-7 11-7 11z" />
+      <circle cx="12" cy="10" r="2.5" />
+    </svg>
   )
 }
