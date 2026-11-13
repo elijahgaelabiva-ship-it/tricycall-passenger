@@ -55,6 +55,18 @@ export default function BookPage() {
         return
       }
 
+      // A driver/admin account must not use the passenger app.
+      const { data: roleRow } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .maybeSingle()
+      if (roleRow && roleRow.role !== 'passenger') {
+        await supabase.auth.signOut()
+        router.replace(`/login?from=intro&wrong=${roleRow.role || 'none'}`)
+        return
+      }
+
       const { data: existingTrip } = await supabase
         .from('trips')
         .select('id, status')
