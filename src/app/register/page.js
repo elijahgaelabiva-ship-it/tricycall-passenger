@@ -59,7 +59,7 @@ export default function RegisterPage() {
 
     if (signUpError) {
       if (signUpError.message.toLowerCase().includes('already registered')) {
-        setError('This phone number is already registered. Try logging in instead.')
+        setError('This phone number already has a TRICYCALL account. Each number can only be used for one account (passenger or driver). Try logging in, or use a different number.')
       } else {
         setError(signUpError.message)
       }
