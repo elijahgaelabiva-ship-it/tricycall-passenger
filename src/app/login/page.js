@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { enforceRole, wrongRoleMessage } from '@/lib/roleCheck'
 import { normalizePhone, isValidPhone, phoneToAuthEmail } from '@/lib/phone'
 import AuthShell, { inputClass, labelClass } from '@/components/AuthShell'
 
@@ -26,12 +27,25 @@ export default function LoginPage() {
         data: { session },
       } = await supabase.auth.getSession()
 
+      const params = new URLSearchParams(window.location.search)
+      const fromIntro = params.get('from') === 'intro'
+      const wrong = params.get('wrong')
+
       if (session) {
-        router.replace('/book')
+        const roleProblem = await enforceRole(session.user.id, 'passenger')
+        if (!roleProblem) {
+          router.replace('/book')
+          return
+        }
+        // Wrong kind of account: they were signed out; show why.
+        setError(roleProblem)
+        setCheckingIntro(false)
         return
       }
 
-      const fromIntro = new URLSearchParams(window.location.search).get('from') === 'intro'
+      if (wrong) {
+        setError(wrongRoleMessage(wrong === 'none' ? null : wrong, 'passenger'))
+      }
 
       if (!fromIntro) {
         window.location.href = '/intro.html'
@@ -56,13 +70,20 @@ export default function LoginPage() {
 
     setLoading(true)
 
-    const { error: loginError } = await supabase.auth.signInWithPassword({
+    const { data: signedIn, error: loginError } = await supabase.auth.signInWithPassword({
       email: phoneToAuthEmail(normalizedPhone),
       password,
     })
 
     if (loginError) {
       setError('Incorrect phone number or password.')
+      setLoading(false)
+      return
+    }
+
+    const roleProblem = await enforceRole(signedIn.user.id, 'passenger')
+    if (roleProblem) {
+      setError(roleProblem)
       setLoading(false)
       return
     }
